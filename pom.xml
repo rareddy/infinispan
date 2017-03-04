@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd">
+	<modelVersion>4.0.0</modelVersion>
+	<parent>
+		<groupId>org.jboss.teiid</groupId>
+		<artifactId>connectors</artifactId>
+		<version>9.3.0.Alpha1-SNAPSHOT</version>
+	</parent>
+	<groupId>org.jboss.teiid.connectors</groupId>
+	<artifactId>infinispan</artifactId>
+	<packaging>pom</packaging>
+	<name>Infinispan Extension</name>
+
+	<properties>
+		<version.org.infinispan>9.0.0.CR2</version.org.infinispan>
+	</properties>
+
+	<dependencyManagement>
+		<dependencies>
+			<dependency>
+				<groupId>org.infinispan</groupId>
+				<artifactId>infinispan-bom</artifactId>
+				<version>${version.org.infinispan}</version>
+				<type>pom</type>
+				<scope>import</scope>
+			</dependency>
+			<dependency>
+				<groupId>org.jboss.teiid.connectors</groupId>
+				<artifactId>infinispan-api</artifactId>
+				<version>9.3.0.Alpha1-SNAPSHOT</version>
+			</dependency>
+			<dependency>
+			    <groupId>org.infinispan</groupId>
+			    <artifactId>infinispan-remote</artifactId>
+			    <version>9.0.0.CR2</version>
+			</dependency>			
+		</dependencies>
+	</dependencyManagement>
+
+	<modules>
+		<module>infinispan-api</module>
+		<module>translator-infinispan-hotrod</module>
+		<module>connector-infinispan-hotrod</module>
+		<module>feature-pack-infinispan</module>
+		<module>dist</module>
+	</modules>
+
+</project>

@@ -1,0 +1,6 @@
+<server-provisioning xmlns="urn:wildfly:server-provisioning:1.1" extract-schemas="true" copy-module-artifacts="true" extract-schemas-groups="org.wildfly.core" exclude-dependencies="true">
+    <feature-packs>
+        <feature-pack groupId="org.jboss.teiid.connectors" artifactId="feature-pack-infinispan" version="${project.version}" />
+    </feature-packs>
+</server-provisioning>
+
