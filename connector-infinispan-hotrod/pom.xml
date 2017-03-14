@@ -6,7 +6,6 @@
         <artifactId>infinispan</artifactId>
        <version>9.3.0.Alpha1-SNAPSHOT</version>
     </parent>
-    <groupId>org.jboss.teiid.connectors</groupId>
     <artifactId>connector-infinispan-hotrod</artifactId>
     <name>Infinispan Hotrod Protocol Based Resource Adapter</name>
     <description>This resource adapter uses Hotrod protocol to create a connection to the Infinispan Cache</description>

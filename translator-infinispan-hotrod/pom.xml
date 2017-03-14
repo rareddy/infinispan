@@ -7,7 +7,6 @@
 		<artifactId>infinispan</artifactId>
 		<version>9.3.0.Alpha1-SNAPSHOT</version>
 	</parent>
-	<groupId>org.jboss.teiid.connectors</groupId>
 	<artifactId>translator-infinispan-hotrod</artifactId>
 	<name>Infinispan Protobuf Translator</name>
 	<description>This tranlator is using protobuf based schema to access the Infinispan cache</description>

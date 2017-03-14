@@ -1,0 +1,33 @@
+package pm1;
+
+/* @Indexed */
+message G1 {
+
+   /*
+     @Id
+     @IndexedField(index=true, store=false)       
+    */
+   required int32 e1 = 1;
+   
+   /* @IndexedField */
+   required string e2 = 2;
+
+   optional float e3 = 3;
+
+   /* @IndexedField(index=true, store=false) */
+   repeated string e4 = 4;
+}
+
+/* @Indexed */
+message G2 {
+   required int32 e1 = 1;
+   required string e2 = 2;
+   
+    optional G3 child = 5;
+}
+
+/* @Indexed */
+message G3 {
+   required int32 e1 = 1;
+   required string e2 = 2;
+}

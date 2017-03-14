@@ -19,21 +19,30 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
  * 02110-1301 USA.
  */
-package org.teiid.infinispan.api;
+package org.teiid.translator.infinispan.hotrod;
 
-public class TeiidMarshallerContext {
-	private static ThreadLocal<TeiidMarsheller.Marsheller> context = new ThreadLocal<TeiidMarsheller.Marsheller>() {
-		@Override
-		protected TeiidMarsheller.Marsheller initialValue() {
-			return null;
-		}
-	};
+import java.util.Arrays;
 
-	public static TeiidMarsheller.Marsheller getMarsheller() {
-		return context.get();
-	}
+import org.infinispan.query.dsl.impl.BaseQueryBuilder;
 
-	public static void setMarsheller(TeiidMarsheller.Marsheller ctx) {
-		context.set(ctx);
-	}
+class DummyQueryBuilder extends BaseQueryBuilder {
+
+    @Override
+    public String toString() {
+
+        return "DummyQueryBuilder [rootTypeName=" + rootTypeName + ", projection=" + Arrays.toString(projection)
+                + ", groupBy=" + Arrays.toString(groupBy) + ", whereFilterCondition=" + whereFilterCondition
+                + ", havingFilterCondition=" + havingFilterCondition + ", sortCriteria=" + sortCriteria
+                + ", startOffset=" + startOffset + ", maxResults=" + maxResults + "]";
+    }
+
+
+    DummyQueryBuilder(DummyQueryFactory queryFactory, String rootTypeName) {
+        super(queryFactory, rootTypeName);
+    }
+
+    @Override
+    public DummyQuery build() {
+        return new DummyQuery();
+    }
 }

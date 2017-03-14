@@ -25,29 +25,26 @@
         <dependency>
             <groupId>org.jboss.teiid</groupId>
             <artifactId>teiid-client-feature-pack</artifactId>
-            <version>${project.version}</version>
+            <version>${version.teiid}</version>
             <type>zip</type>
         </dependency>
         <dependency>
             <groupId>org.jboss.teiid</groupId>
             <artifactId>teiid-wildfly-integration-feature-pack</artifactId>
-            <version>${project.version}</version>
+            <version>${version.teiid}</version>
             <type>zip</type>
         </dependency>
         <dependency>
             <groupId>org.jboss.teiid.connectors</groupId>
             <artifactId>infinispan-api</artifactId>
-            <version>${project.version}</version>
         </dependency>                
         <dependency>
             <groupId>org.jboss.teiid.connectors</groupId>
-            <artifactId>translator-infinispan-protobuf</artifactId>
-            <version>${project.version}</version>
+            <artifactId>translator-infinispan-hotrod</artifactId>
         </dependency>
         <dependency>
             <groupId>org.jboss.teiid.connectors</groupId>
             <artifactId>connector-infinispan-hotrod</artifactId>
-            <version>${project.version}</version>
         </dependency>
     </dependencies>
 

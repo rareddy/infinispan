@@ -1,2 +1,2 @@
-org.teiid.translator.infinispan.protobuf.InfinispanExecutionFactory
+org.teiid.translator.infinispan.hotrod.InfinispanExecutionFactory
 

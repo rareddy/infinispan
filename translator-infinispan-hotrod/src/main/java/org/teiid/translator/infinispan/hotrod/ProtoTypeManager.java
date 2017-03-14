@@ -19,7 +19,7 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
  * 02110-1301 USA.
  */
-package org.teiid.translator.infinispan.protobuf;
+package org.teiid.translator.infinispan.hotrod;
 
 import java.util.HashMap;
 
@@ -36,25 +36,21 @@ public class ProtoTypeManager {
     static {
         protoTypes.put(ScalarType.STRING, DataTypeManager.DefaultDataTypes.STRING);
         protoTypes.put(ScalarType.BOOL, DataTypeManager.DefaultDataTypes.BOOLEAN);
-        
+
         protoTypes.put(ScalarType.FIXED32, DataTypeManager.DefaultDataTypes.INTEGER);
         protoTypes.put(ScalarType.INT32, DataTypeManager.DefaultDataTypes.INTEGER);
         protoTypes.put(ScalarType.SINT32, DataTypeManager.DefaultDataTypes.INTEGER);
         protoTypes.put(ScalarType.UINT32, DataTypeManager.DefaultDataTypes.INTEGER);
-        
+
         protoTypes.put(ScalarType.FIXED64, DataTypeManager.DefaultDataTypes.LONG);
         protoTypes.put(ScalarType.INT64, DataTypeManager.DefaultDataTypes.LONG);
         protoTypes.put(ScalarType.SINT64, DataTypeManager.DefaultDataTypes.LONG);
         protoTypes.put(ScalarType.UINT64, DataTypeManager.DefaultDataTypes.LONG);
-        
+
         protoTypes.put(ScalarType.FLOAT, DataTypeManager.DefaultDataTypes.FLOAT);
         protoTypes.put(ScalarType.DOUBLE, DataTypeManager.DefaultDataTypes.DOUBLE);
-        protoTypes.put(ScalarType.BYTES, DataTypeManager.DefaultDataTypes.VARBINARY); //$NON-NLS-1$
-        
-//        odataTypes.put("Edm.Date", DataTypeManager.DefaultDataTypes.DATE);
-//        odataTypes.put("Edm.TimeOfDay", DataTypeManager.DefaultDataTypes.TIME);
-//        odataTypes.put("Edm.DateTimeOffset", DataTypeManager.DefaultDataTypes.TIMESTAMP);
-        
+        protoTypes.put(ScalarType.BYTES, DataTypeManager.DefaultDataTypes.VARBINARY);
+
         teiidTypes.put(DataTypeManager.DefaultDataTypes.STRING, ScalarType.STRING);
         teiidTypes.put(DataTypeManager.DefaultDataTypes.BOOLEAN, ScalarType.BOOL);
         teiidTypes.put(DataTypeManager.DefaultDataTypes.SHORT, ScalarType.INT32);
@@ -71,18 +67,18 @@ public class ProtoTypeManager {
         teiidTypes.put(DataTypeManager.DefaultDataTypes.BLOB, ScalarType.BYTES);
         teiidTypes.put(DataTypeManager.DefaultDataTypes.CLOB, ScalarType.BYTES);
         teiidTypes.put(DataTypeManager.DefaultDataTypes.XML, ScalarType.BYTES);
-        teiidTypes.put(DataTypeManager.DefaultDataTypes.VARBINARY, ScalarType.BYTES); //$NON-NLS-1$
+        teiidTypes.put(DataTypeManager.DefaultDataTypes.VARBINARY, ScalarType.BYTES);
         //will fail for most values
-        teiidTypes.put(DataTypeManager.DefaultDataTypes.OBJECT, ScalarType.BYTES); //$NON-NLS-1$ 
-        teiidTypes.put(DataTypeManager.DefaultDataTypes.GEOMETRY, ScalarType.BYTES); //$NON-NLS-1$
+        teiidTypes.put(DataTypeManager.DefaultDataTypes.OBJECT, ScalarType.BYTES);
+        teiidTypes.put(DataTypeManager.DefaultDataTypes.GEOMETRY, ScalarType.BYTES);
     }
-    
+
     public static String teiidType(DataType protoType, boolean array, boolean isEnum) {
         // treat all enums as integers
         if (isEnum) {
             return DataTypeManager.DefaultDataTypes.INTEGER;
         }
-        
+
         String type =  protoTypes.get(protoType);
         if (type == null) {
             type = DataTypeManager.DefaultDataTypes.STRING; // special case for enum type

@@ -1,4 +1,4 @@
-/subsystem=teiid/translator=ispn-hotrod:add(module=org.jboss.teiid.translator.infinispan.hotrod)
+/subsystem=teiid/translator=infinispan-hotrod:add(module=org.jboss.teiid.translator.infinispan.hotrod)
 
-/subsystem=resource-adapters/resource-adapter=ispn-hotrod-ra:add(module=org.jboss.teiid.resource-adapter.infinispan.hotrod)
+/subsystem=resource-adapters/resource-adapter=infinispan-hotrod:add(module=org.jboss.teiid.resource-adapter.infinispan.hotrod)
 
