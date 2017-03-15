@@ -51,11 +51,12 @@ public class IckleConvertionVisitor extends SQLStringVisitor {
     private Integer rowLimit;
     private Integer rowOffset;
     private boolean includePK;
+    private boolean avoidProjection = false;
 
     public IckleConvertionVisitor(RuntimeMetadata metadata, boolean includePK) {
         this.metadata = metadata;
-        this.shortNameOnly = true;
         this.includePK = includePK;
+        this.shortNameOnly = true;
     }
 
     public Table getTable() {
@@ -64,10 +65,8 @@ public class IckleConvertionVisitor extends SQLStringVisitor {
 
     @Override
     public void visit(NamedTable obj) {
-        this.table = obj;
-
         if (this.includePK) {
-            KeyRecord pk = getTable().getPrimaryKey();
+            KeyRecord pk = obj.getMetadataObject().getPrimaryKey();
             if (pk != null) {
                 for (Column column : pk.getColumns()) {
                     projectedExpressions.add(new ColumnReference(obj, column.getName(), column, column.getJavaType()));
@@ -75,11 +74,35 @@ public class IckleConvertionVisitor extends SQLStringVisitor {
             }
         }
 
-        if(this.table != null) {
-            buffer.append(ProtobufMetadataProcessor.getMessageName(getTable()));
+        String messageName = null;
+        String mergedTableName = ProtobufMetadataProcessor.getMerge(obj.getMetadataObject());
+        if (mergedTableName == null) {
+            messageName = getMessageName(obj.getMetadataObject());
+            this.table = obj;
         } else {
-            buffer.append(obj.getName());
+            try {
+                Table mergedTable = this.metadata.getTable(mergedTableName);
+                messageName = getMessageName(mergedTable);
+                this.table = new NamedTable(mergedTable.getName(), obj.getCorrelationName(), mergedTable);
+            } catch (TranslatorException e) {
+                this.exceptions.add(e);
+            }
         }
+
+        buffer.append(messageName);
+        if (obj.getCorrelationName() != null) {
+            buffer.append(Tokens.SPACE);
+            buffer.append(obj.getCorrelationName());
+        }
+    }
+
+    private String getMessageName(Table obj) {
+        String messageName;
+        messageName = ProtobufMetadataProcessor.getMessageName(obj);
+        if (messageName == null) {
+            messageName = obj.getName();
+        }
+        return messageName;
     }
 
     public boolean isPartOfPrimaryKey(String columnName) {
@@ -194,6 +217,11 @@ public class IckleConvertionVisitor extends SQLStringVisitor {
     }
 
     @Override
+    public void visit(ColumnReference obj) {
+        buffer.append(getQualifiedName(obj.getMetadataObject()));
+    }
+
+    @Override
     public void visit(DerivedColumn obj) {
         if (obj.getExpression() instanceof ColumnReference) {
             Column column = ((ColumnReference)obj.getExpression()).getMetadataObject();
@@ -204,6 +232,10 @@ public class IckleConvertionVisitor extends SQLStringVisitor {
             column = normalizePseudoColumn(column);
             if (!this.includePK || !isPartOfPrimaryKey(column.getName())) {
                 this.projectedExpressions.add(new ColumnReference(this.table, column.getName(), column, column.getJavaType()));
+            }
+            if (ProtobufMetadataProcessor.getMessageName(column) != null
+                    || ProtobufMetadataProcessor.getMerge((Table) column.getParent()) != null) {
+                this.avoidProjection = true;
             }
         }
         else if (obj.getExpression() instanceof AggregateFunction) {
@@ -236,10 +268,21 @@ public class IckleConvertionVisitor extends SQLStringVisitor {
 
     public String getQuery(boolean selectAllColumns) {
         StringBuilder sb = new StringBuilder();
-        addSelectedColumns(selectAllColumns, sb);
-
-        sb.append(Tokens.SPACE).append(super.toString());
+        if (!this.avoidProjection) {
+            addSelectedColumns(selectAllColumns, sb);
+            sb.append(Tokens.SPACE);
+        }
+        sb.append(super.toString());
         return  sb.toString();
+    }
+
+    String getQualifiedName(Column column) {
+        String aliasName = this.table.getCorrelationName();
+        String nis = getName(column);
+        if (aliasName != null) {
+            return aliasName + Tokens.DOT + nis;
+        }
+        return nis;
     }
 
     StringBuilder addSelectedColumns(boolean selectAllColumns, StringBuilder sb) {
@@ -249,7 +292,7 @@ public class IckleConvertionVisitor extends SQLStringVisitor {
             boolean first = true;
             for (Column column : getTable().getColumns()) {
                 if (column.isSelectable()) {
-                    String nis = (column.getNameInSource() == null)?column.getName():column.getNameInSource();
+                    String nis = getQualifiedName(column);
                     if (!first) {
                         sb.append(Tokens.COMMA).append(Tokens.SPACE);
                     }
@@ -263,14 +306,12 @@ public class IckleConvertionVisitor extends SQLStringVisitor {
 
         boolean first = true;
         for (Expression expr : this.projectedExpressions) {
-
             if (!first) {
                 sb.append(Tokens.COMMA).append(Tokens.SPACE);
             }
-
             if (expr instanceof ColumnReference) {
                 Column column = ((ColumnReference) expr).getMetadataObject();
-                String nis = (column.getNameInSource() == null) ? column.getName() : column.getNameInSource();
+                String nis = getQualifiedName(column);
                 sb.append(nis);
             } else if (expr instanceof Function) {
                 Function func = (Function) expr;
@@ -280,7 +321,7 @@ public class IckleConvertionVisitor extends SQLStringVisitor {
                 } else {
                     ColumnReference columnRef = (ColumnReference) func.getParameters().get(0);
                     Column column = columnRef.getMetadataObject();
-                    String nis = (column.getNameInSource() == null) ? column.getName() : column.getNameInSource();
+                    String nis = getQualifiedName(column);
                     sb.append(nis);
                 }
                 sb.append(Tokens.RPAREN);
@@ -296,5 +337,10 @@ public class IckleConvertionVisitor extends SQLStringVisitor {
 
     public Integer getRowOffset() {
         return rowOffset;
+    }
+
+    @Override
+    protected boolean useAsInGroupAlias(){
+        return false;
     }
 }

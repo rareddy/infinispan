@@ -89,6 +89,12 @@ public class TestIckleConversionVisitor {
     }
 
     @Test
+    public void testEqualityClauseWithAlias() throws Exception {
+        helpExecute("select * from model.G1 as p where p.e1 = 1",
+                "SELECT p.e1, p.e2, p.e3, p.e4 FROM pm1.G1 p WHERE p.e1 = 1");
+    }
+
+    @Test
     public void testInClause() throws Exception {
         helpExecute("select * from model.G1 where e2 IN ('foo', 'bar')",
                 "SELECT e1, e2, e3, e4 FROM pm1.G1 WHERE e2 IN ('foo', 'bar')");
@@ -129,5 +135,22 @@ public class TestIckleConversionVisitor {
     public void testIsNullClause() throws Exception {
         helpExecute("select e1 from model.G1 where e2 IS NULL", "SELECT e1 FROM pm1.G1 WHERE e2 IS NULL");
         helpExecute("select e1 from model.G1 where e2 IS NOT NULL", "SELECT e1 FROM pm1.G1 WHERE e2 IS NOT NULL");
+    }
+
+    @Test
+    public void testWithEmbeddedChild() throws Exception {
+        helpExecute("select * from model.G2", "FROM pm1.G2");
+        helpExecute("select * from model.G2 as p", "FROM pm1.G2 p");
+        helpExecute("select * from model.G2 as p where g3child_g3e1 = 2",
+                "FROM pm1.G2 p WHERE p.g3child.g3e1 = 2");
+    }
+
+    @Test
+    public void testWithExternalChild() throws Exception {
+        helpExecute("select * from model.G4", "FROM pm1.G2");
+        helpExecute("select * from model.G4 as p", "FROM pm1.G2 p");
+        helpExecute("select * from model.G4 as p where g4child_g4e1 = 2", "FROM pm1.G2 p WHERE p.g4child.g4e1 = 2");
+
+        helpExecute("select * from model.G4 as p where G2_e1 = 2", "FROM pm1.G2 p WHERE p.e1 = 2");
     }
 }

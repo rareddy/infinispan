@@ -53,6 +53,7 @@ public class InfinispanQueryExecution implements ResultSetExecution {
     private RuntimeMetadata metadata;
     private ExecutionContext executionContext;
     private Paginate results;
+    private TeiidMarsheller.Marsheller marshaller;
 
     public InfinispanQueryExecution(InfinispanExecutionFactory translator,
             QueryExpression command, ExecutionContext executionContext,
@@ -69,7 +70,8 @@ public class InfinispanQueryExecution implements ResultSetExecution {
             IckleConvertionVisitor visitor = new IckleConvertionVisitor(metadata, false);
             visitor.append(this.command);
             Table table = visitor.getTable();
-            TeiidMarshallerContext.setMarsheller(getMarsheller(table));
+            this.marshaller = getMarsheller(table);
+            TeiidMarshallerContext.setMarsheller(this.marshaller);
             String queryStr = visitor.getQuery(false);
             LogManager.logDetail(LogConstants.CTX_CONNECTOR, "SourceQuery:", queryStr);
 
@@ -97,7 +99,12 @@ public class InfinispanQueryExecution implements ResultSetExecution {
 
     @Override
     public List<?> next() throws TranslatorException, DataNotAvailableException {
-        return results.getNextRow();
+        try {
+            TeiidMarshallerContext.setMarsheller(this.marshaller);
+            return results.getNextRow();
+        } finally {
+            TeiidMarshallerContext.setMarsheller(null);
+        }
     }
 
     @Override
@@ -117,7 +124,7 @@ public class InfinispanQueryExecution implements ResultSetExecution {
         return cache;
     }
 
-    class Paginate {
+    static class Paginate {
         private Query query;
         private int batchSize;
         private Integer offset;
@@ -167,13 +174,19 @@ public class InfinispanQueryExecution implements ResultSetExecution {
             }
 
             if (responseIter != null && responseIter.hasNext()){
-                Object[] row = (Object[])this.responseIter.next();
-                return Arrays.asList(row);
+                Object row = this.responseIter.next();
+                if (row instanceof Object[]) {
+                    return Arrays.asList((Object[])row);
+                }
+                return List.class.cast(row);
             } else {
                 if (!lastBatch) {
                     fetchNextBatch();
-                    Object[] row = (Object[])this.responseIter.next();
-                    return Arrays.asList(row);
+                    Object row = this.responseIter.next();
+                    if (row instanceof Object[]) {
+                        return Arrays.asList((Object[])row);
+                    }
+                    return List.class.cast(row);
                 }
             }
             return null;

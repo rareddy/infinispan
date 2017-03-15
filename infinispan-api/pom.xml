@@ -21,8 +21,8 @@
             <artifactId>teiid-common-core</artifactId>
         </dependency> 
         <dependency>
-            <groupId>org.jboss.teiid</groupId>
-            <artifactId>teiid-engine</artifactId>
+            <groupId>org.jboss.teiid.connectors</groupId>
+            <artifactId>document-api</artifactId>
         </dependency>
         <dependency>
             <groupId>org.infinispan</groupId>

@@ -2,7 +2,6 @@ package pm1;
 
 /* @Indexed */
 message G1 {
-
    /*
      @Id
      @IndexedField(index=true, store=false)       
@@ -20,14 +19,22 @@ message G1 {
 
 /* @Indexed */
 message G2 {
+   /*@Id*/
    required int32 e1 = 1;
    required string e2 = 2;
    
-    optional G3 child = 5;
+   optional G3 g3child = 5;
+   repeated G4 g4child = 6;
 }
 
 /* @Indexed */
 message G3 {
-   required int32 e1 = 1;
-   required string e2 = 2;
+   required int32 g3e1 = 1;
+   required string g3e2 = 2;
+}
+
+/* @Indexed */
+message G4 {
+   required int32 g4e1 = 1;
+   required string g4e2 = 2;
 }

@@ -22,11 +22,14 @@
 
 package org.teiid.translator.infinispan.hotrod;
 
+import java.util.List;
+
 import javax.resource.cci.ConnectionFactory;
 
 import org.teiid.core.util.PropertiesUtils;
 import org.teiid.infinispan.api.InfinispanConnection;
 import org.teiid.infinispan.api.ProtobufResource;
+import org.teiid.language.Argument;
 import org.teiid.language.Command;
 import org.teiid.language.QueryExpression;
 import org.teiid.metadata.MetadataFactory;
@@ -34,6 +37,7 @@ import org.teiid.metadata.RuntimeMetadata;
 import org.teiid.translator.ExecutionContext;
 import org.teiid.translator.ExecutionFactory;
 import org.teiid.translator.MetadataProcessor;
+import org.teiid.translator.ProcedureExecution;
 import org.teiid.translator.ResultSetExecution;
 import org.teiid.translator.Translator;
 import org.teiid.translator.TranslatorException;
@@ -53,13 +57,15 @@ public class InfinispanExecutionFactory extends ExecutionFactory<ConnectionFacto
 
 	public InfinispanExecutionFactory() {
 		setMaxInCriteriaSize(MAX_SET_SIZE);
-		setMaxDependentInPredicates(5);
+		setMaxDependentInPredicates(MAX_SET_SIZE);
 		setSupportsOrderBy(true);
 		setSupportsSelectDistinct(false);
 		setSupportsInnerJoins(false);
 		setSupportsFullOuterJoins(false);
 		setSupportsOuterJoins(false);
 		setSupportedJoinCriteria(SupportedJoinCriteria.KEY);
+		setTransactionSupport(TransactionSupport.NONE);
+		setSupportsDirectQueryProcedure(false);
 	}
 
     @Override
@@ -81,6 +87,13 @@ public class InfinispanExecutionFactory extends ExecutionFactory<ConnectionFacto
             InfinispanConnection connection) throws TranslatorException {
         return new InfinispanUpdateExecution(command, executionContext, metadata,
                 connection);
+    }
+
+    @Override
+    public ProcedureExecution createDirectExecution(List<Argument> arguments, Command command,
+            ExecutionContext executionContext, RuntimeMetadata metadata, InfinispanConnection connection)
+            throws TranslatorException {
+        return new InfinispanDirectExecution(arguments, command, executionContext, metadata, connection);
     }
 
     @Override
@@ -108,7 +121,7 @@ public class InfinispanExecutionFactory extends ExecutionFactory<ConnectionFacto
 
     @Override
     public boolean supportsAliasedTable() {
-        return false;
+        return true;
     }
 
     @Override
@@ -219,5 +232,4 @@ public class InfinispanExecutionFactory extends ExecutionFactory<ConnectionFacto
     public boolean supportsHaving() {
         return true;
     }
-
 }

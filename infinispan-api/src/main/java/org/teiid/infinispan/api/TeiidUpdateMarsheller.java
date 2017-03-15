@@ -25,8 +25,13 @@ import java.io.IOException;
 import java.util.Map;
 import java.util.TreeMap;
 
+import org.infinispan.protostream.BaseMarshaller;
 import org.infinispan.protostream.RawProtoStreamReader;
 import org.infinispan.protostream.RawProtoStreamWriter;
+import org.infinispan.protostream.MessageMarshaller.ProtoStreamReader;
+import org.infinispan.protostream.MessageMarshaller.ProtoStreamWriter;
+import org.infinispan.protostream.descriptors.FieldDescriptor;
+import org.infinispan.protostream.impl.BaseMarshallerDelegate;
 import org.teiid.metadata.Column;
 import org.teiid.metadata.MetadataFactory;
 import org.teiid.metadata.Table;
@@ -35,6 +40,7 @@ public class TeiidUpdateMarsheller implements TeiidMarsheller.Marsheller {
     private static final String TAG = MetadataFactory.ODATA_URI+"TAG"; //$NON-NLS-1$
     private static final String MESSAGE = MetadataFactory.ODATA_URI+"MESSAGE"; //$NON-NLS-1$
     private Table table;
+    private MarshallerDelegate delegate;
 
     public TeiidUpdateMarsheller(Table table) {
         this.table = table;
@@ -42,7 +48,7 @@ public class TeiidUpdateMarsheller implements TeiidMarsheller.Marsheller {
 
     // Read from ISPN Types >> Teiid Types
     @Override
-    public Object read(String name, RawProtoStreamReader in)  throws IOException {
+    public Object read(RawProtoStreamReader in)  throws IOException {
         Map<String, Object> row = new TreeMap<>();
         for (Column column: table.getColumns()) {
             int tag = Integer.parseInt(column.getProperty(TAG, false));
@@ -67,5 +73,42 @@ public class TeiidUpdateMarsheller implements TeiidMarsheller.Marsheller {
     @Override
     public String getTypeName() {
         return table.getProperty(MESSAGE, false);
+    }
+
+    @Override
+    public BaseMarshallerDelegate<Map<String, Object>> getDelegate() {
+        if (delegate == null) {
+            delegate = new MarshallerDelegate();
+        }
+        return delegate;
+    }
+
+    class MarshallerDelegate implements BaseMarshallerDelegate<Map<String, Object>> {
+        @Override
+        public BaseMarshaller<Map<String, Object>> getMarshaller() {
+            return new BaseMarshaller<Map<String, Object>>() {
+                @Override
+                public Class getJavaClass() {
+                    return Map.class;
+                }
+
+                @Override
+                public String getTypeName() {
+                    return getTypeName();
+                }
+            };
+        }
+
+        @Override
+        public void marshall(FieldDescriptor fieldDescriptor, Map<String, Object> value, ProtoStreamWriter writer,
+                RawProtoStreamWriter out) throws IOException {
+            write(value, out);
+        }
+
+        @Override
+        public Map<String, Object> unmarshall(FieldDescriptor fieldDescriptor, ProtoStreamReader reader,
+                RawProtoStreamReader in) throws IOException {
+            return (Map<String, Object>)read(in);
+        }
     }
 }

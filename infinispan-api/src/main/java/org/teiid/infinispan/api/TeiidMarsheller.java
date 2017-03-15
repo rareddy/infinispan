@@ -42,8 +42,10 @@ import org.infinispan.commons.io.ByteBuffer;
 import org.infinispan.commons.io.ByteBufferImpl;
 import org.infinispan.protostream.RawProtoStreamReader;
 import org.infinispan.protostream.RawProtoStreamWriter;
+import org.infinispan.protostream.SerializationContext;
 import org.infinispan.protostream.WrappedMessage;
 import org.infinispan.protostream.descriptors.Type;
+import org.infinispan.protostream.impl.BaseMarshallerDelegate;
 import org.infinispan.protostream.impl.ByteArrayOutputStreamEx;
 import org.infinispan.protostream.impl.RawProtoStreamReaderImpl;
 import org.infinispan.protostream.impl.RawProtoStreamWriterImpl;
@@ -55,13 +57,16 @@ import org.teiid.core.types.SQLXMLImpl;
 import org.teiid.core.util.ObjectConverterUtil;
 
 public class TeiidMarsheller extends ProtoStreamMarshaller {
+    private SerializationContext ctx;
 
     public interface Marsheller {
-        Object read(String name, RawProtoStreamReader in) throws IOException;
+        Object read(RawProtoStreamReader in) throws IOException;
 
         void write(Object obj, RawProtoStreamWriter out) throws IOException;
 
         String getTypeName();
+
+        <T> BaseMarshallerDelegate<T> getDelegate();
     }
 
     @Override
@@ -74,6 +79,15 @@ public class TeiidMarsheller extends ProtoStreamMarshaller {
             return true;
         }
         return false;
+    }
+
+    public TeiidMarsheller(SerializationContext ctx) {
+        this.ctx = ctx;
+     }
+
+    @Override
+    public SerializationContext getSerializationContext() {
+       return this.ctx;
     }
 
     @Override
@@ -176,7 +190,7 @@ public class TeiidMarsheller extends ProtoStreamMarshaller {
         if (messageBytes != null) {
             // it's a Message type
             RawProtoStreamReader contents = RawProtoStreamReaderImpl.newInstance(messageBytes);
-            return TeiidMarshallerContext.getMarsheller().read(descriptorFullName, contents);
+            return TeiidMarshallerContext.getMarsheller().read(contents);
         } else {
             // it's an Enum
             // BaseMarshallerDelegate marshallerDelegate = ((SerializationContextImpl)

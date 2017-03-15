@@ -33,6 +33,7 @@ import org.infinispan.protostream.descriptors.Descriptor;
 import org.infinispan.protostream.descriptors.EnumDescriptor;
 import org.infinispan.protostream.descriptors.FileDescriptor;
 import org.infinispan.protostream.descriptors.GenericDescriptor;
+import org.infinispan.protostream.impl.BaseMarshallerDelegate;
 
 public class TeiidSerializationContext implements SerializationContext {
 
@@ -92,8 +93,10 @@ public class TeiidSerializationContext implements SerializationContext {
 
     @Override
     public <T> BaseMarshaller<T> getMarshaller(String fullName) {
-        if (TeiidMarshallerContext.getMarsheller().getTypeName().equals(fullName)) {
-            return (BaseMarshaller<T>)TeiidMarshallerContext.getMarsheller();
+        TeiidMarsheller.Marsheller m = TeiidMarshallerContext.getMarsheller();
+        if (m != null && m.getTypeName().equals(fullName)) {
+            // TODO: not sure if this is called
+            return null;
         }
         return delegate.getMarshaller(fullName);
     }
@@ -121,5 +124,19 @@ public class TeiidSerializationContext implements SerializationContext {
     @Override
     public GenericDescriptor getDescriptorByName(String fullName) {
         return delegate.getDescriptorByName(fullName);
+    }
+
+    @Override
+    public <T> BaseMarshallerDelegate<T> getMarshallerDelegate(String descriptorFullName) {
+        TeiidMarsheller.Marsheller m = TeiidMarshallerContext.getMarsheller();
+        if (m != null && descriptorFullName.equals(m.getTypeName())) {
+            return m.getDelegate();
+        }
+        return delegate.getMarshallerDelegate(descriptorFullName);
+    }
+
+    @Override
+    public <T> BaseMarshallerDelegate<T> getMarshallerDelegate(Class<T> clazz) {
+        return delegate.getMarshallerDelegate(clazz);
     }
 }

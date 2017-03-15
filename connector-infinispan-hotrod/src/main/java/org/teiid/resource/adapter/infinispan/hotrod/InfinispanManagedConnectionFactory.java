@@ -25,8 +25,12 @@ import javax.resource.ResourceException;
 
 import org.infinispan.client.hotrod.RemoteCacheManager;
 import org.infinispan.client.hotrod.configuration.ConfigurationBuilder;
+import org.infinispan.protostream.ProtobufUtil;
+import org.infinispan.protostream.SerializationContext;
+import org.infinispan.protostream.config.Configuration;
 import org.teiid.core.BundleUtil;
 import org.teiid.infinispan.api.TeiidMarsheller;
+import org.teiid.infinispan.api.TeiidSerializationContext;
 import org.teiid.resource.spi.BasicConnectionFactory;
 import org.teiid.resource.spi.BasicManagedConnectionFactory;
 
@@ -66,7 +70,9 @@ public class InfinispanManagedConnectionFactory extends BasicManagedConnectionFa
 
         public InfinispanConnectionFactory() throws ResourceException {
             try {
-                TeiidMarsheller marsheller = new TeiidMarsheller();
+                SerializationContext baseCtx = ProtobufUtil.newSerializationContext(Configuration.builder().build());
+                TeiidSerializationContext ctx = new TeiidSerializationContext(baseCtx);
+                TeiidMarsheller marsheller = new TeiidMarsheller(ctx);
                 ConfigurationBuilder builder = new ConfigurationBuilder();
                 builder.addServers(remoteServerList);
                 builder.marshaller(marsheller);
