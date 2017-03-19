@@ -24,7 +24,6 @@ package org.teiid.infinispan.api;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
-import java.io.InputStream;
 import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.sql.Blob;
@@ -50,10 +49,6 @@ import org.infinispan.protostream.impl.ByteArrayOutputStreamEx;
 import org.infinispan.protostream.impl.RawProtoStreamReaderImpl;
 import org.infinispan.protostream.impl.RawProtoStreamWriterImpl;
 import org.infinispan.protostream.impl.WireFormat;
-import org.teiid.core.types.BlobImpl;
-import org.teiid.core.types.ClobImpl;
-import org.teiid.core.types.InputStreamFactory;
-import org.teiid.core.types.SQLXMLImpl;
 import org.teiid.core.util.ObjectConverterUtil;
 
 public class TeiidMarsheller extends ProtoStreamMarshaller {
@@ -278,7 +273,7 @@ public class TeiidMarsheller extends ProtoStreamMarshaller {
             throw new IOException(e);
         }
     }
-
+    /*
     public static Object readAttribute(RawProtoStreamReader in, Class<?> type, int tag) throws IOException {
         Type protoType = Type.STRING;
         if (type.isAssignableFrom(String.class)) {
@@ -377,12 +372,38 @@ public class TeiidMarsheller extends ProtoStreamMarshaller {
                 return null;
             }
             return new SQLXMLImpl(value);
+        } else if(type.isArray()) {
+            return readPrimitiveArray(in, type.getComponentType(), tag);
         } else {
             throw new IOException("unknown type, error in Teiid serializer");
         }
     }
 
-    private static Object getValue(RawProtoStreamReader in, Type type, int expectedTag) throws IOException {
+    public static Object readPrimitiveArray(RawProtoStreamReader in, Class<?> type, int tag) throws IOException {
+        ArrayList<Object> collection = new ArrayList<>();
+        Object value = null;
+
+        Type hotrodType = getType(type);
+
+        int expectedTag = WireFormat.makeTag(tag, hotrodType.getWireType());
+
+        while ((value = getValue(in, hotrodType, expectedTag)) != null) {
+            collection.add(value);
+        }
+
+        if (collection.isEmpty()) {
+            return null;
+        }
+
+        Object array = Array.newInstance(type, collection.size());
+        for (int i = 0; i < collection.size(); i++) {
+            Object arrayItem = collection.get(i);
+            Array.set(array, i, arrayItem);
+        }
+        return array;
+    }*/
+
+    public static Object getValue(RawProtoStreamReader in, Type type, int expectedTag) throws IOException {
         while (true) {
             int tag = in.readTag();
             if (tag == 0) {
@@ -427,4 +448,5 @@ public class TeiidMarsheller extends ProtoStreamMarshaller {
         }
         return null;
     }
+
 }

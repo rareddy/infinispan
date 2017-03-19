@@ -21,19 +21,28 @@
  */
 package org.teiid.infinispan.api;
 
-public class TeiidMarshallerContext {
-	private static ThreadLocal<TeiidMarsheller.Marsheller> context = new ThreadLocal<TeiidMarsheller.Marsheller>() {
-		@Override
-		protected TeiidMarsheller.Marsheller initialValue() {
-			return null;
-		}
-	};
+import java.util.TreeMap;
 
-	public static TeiidMarsheller.Marsheller getMarsheller() {
-		return context.get();
-	}
+import org.teiid.translator.document.Document;
 
-	public static void setMarsheller(TeiidMarsheller.Marsheller marshaller) {
-		context.set(marshaller);
-	}
+public class InfinispanDocument extends Document {
+    private TreeMap<Integer, TableWireFormat> wireMap;
+
+    public InfinispanDocument(String name, TreeMap<Integer, TableWireFormat> columnMap, InfinispanDocument parent) {
+        super(name, false, parent);
+        this.wireMap = columnMap;
+    }
+
+    public void addProperty(int wireType, Object value) {
+        TableWireFormat twf = this.wireMap.get(wireType);
+        if (twf.isArrayType()) {
+            super.addArrayProperty(twf.getColumnName(), value);
+        } else {
+            super.addProperty(twf.getColumnName(), value);
+        }
+    }
+
+    public TreeMap<Integer, TableWireFormat> getWireMap() {
+        return wireMap;
+    }
 }

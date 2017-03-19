@@ -19,21 +19,38 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
  * 02110-1301 USA.
  */
-package org.teiid.infinispan.api;
+package org.teiid.translator.marshallers;
 
-public class TeiidMarshallerContext {
-	private static ThreadLocal<TeiidMarsheller.Marsheller> context = new ThreadLocal<TeiidMarsheller.Marsheller>() {
-		@Override
-		protected TeiidMarsheller.Marsheller initialValue() {
-			return null;
-		}
-	};
+import java.io.IOException;
 
-	public static TeiidMarsheller.Marsheller getMarsheller() {
-		return context.get();
-	}
+import org.infinispan.protostream.MessageMarshaller;
 
-	public static void setMarsheller(TeiidMarsheller.Marsheller marshaller) {
-		context.set(marshaller);
-	}
+public class G3Marshaller implements MessageMarshaller<G3> {
+
+    @Override
+    public String getTypeName() {
+        return "pm1.G3";
+    }
+
+    @Override
+    public Class<G3> getJavaClass() {
+        return G3.class;
+    }
+
+    @Override
+    public G3 readFrom(ProtoStreamReader reader) throws IOException {
+        int e1 = reader.readInt("e1");
+        String e2 = reader.readString("e2");
+
+        G3 g3 = new G3();
+        g3.setE1(e1);
+        g3.setE2(e2);
+        return g3;
+    }
+
+    @Override
+    public void writeTo(ProtoStreamWriter writer, G3 g3) throws IOException {
+        writer.writeInt("e1", g3.getE1());
+        writer.writeString("e2", g3.getE2());
+    }
 }

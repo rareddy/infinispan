@@ -15,6 +15,8 @@ message G1 {
 
    /* @IndexedField(index=true, store=false) */
    repeated string e4 = 4;
+   
+   repeated string e5 = 5;
 }
 
 /* @Indexed */
@@ -23,18 +25,20 @@ message G2 {
    required int32 e1 = 1;
    required string e2 = 2;
    
-   optional G3 g3child = 5;
-   repeated G4 g4child = 6;
+   optional G3 g3 = 5;
+   repeated G4 g4 = 6;
+   optional bytes e5 = 7;
+   optional fixed64 e6 = 8;
 }
 
 /* @Indexed */
 message G3 {
-   required int32 g3e1 = 1;
-   required string g3e2 = 2;
+   required int32 e1 = 1;
+   required string e2 = 2;
 }
 
 /* @Indexed */
 message G4 {
-   required int32 g4e1 = 1;
-   required string g4e2 = 2;
+   required int32 e1 = 1;
+   required string e2 = 2;
 }

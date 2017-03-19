@@ -137,6 +137,10 @@ public class TeiidSerializationContext implements SerializationContext {
 
     @Override
     public <T> BaseMarshallerDelegate<T> getMarshallerDelegate(Class<T> clazz) {
+        TeiidMarsheller.Marsheller m = TeiidMarshallerContext.getMarsheller();
+        if (m != null && clazz.isAssignableFrom(InfinispanDocument.class)) {
+            return m.getDelegate();
+        }
         return delegate.getMarshallerDelegate(clazz);
     }
 }

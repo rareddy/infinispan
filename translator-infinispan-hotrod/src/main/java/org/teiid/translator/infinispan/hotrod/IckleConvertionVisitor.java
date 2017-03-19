@@ -25,7 +25,9 @@ import static org.teiid.language.SQLConstants.Reserved.HAVING;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.TreeMap;
 
+import org.teiid.infinispan.api.TableWireFormat;
 import org.teiid.language.AggregateFunction;
 import org.teiid.language.ColumnReference;
 import org.teiid.language.DerivedColumn;
@@ -40,6 +42,7 @@ import org.teiid.language.visitor.SQLStringVisitor;
 import org.teiid.metadata.Column;
 import org.teiid.metadata.KeyRecord;
 import org.teiid.metadata.RuntimeMetadata;
+import org.teiid.metadata.Schema;
 import org.teiid.metadata.Table;
 import org.teiid.translator.TranslatorException;
 
@@ -47,7 +50,7 @@ public class IckleConvertionVisitor extends SQLStringVisitor {
     protected ArrayList<TranslatorException> exceptions = new ArrayList<TranslatorException>();
     protected RuntimeMetadata metadata;
     protected List<Expression> projectedExpressions = new ArrayList<>();
-    protected NamedTable table;
+    protected NamedTable namedTable;
     private Integer rowLimit;
     private Integer rowOffset;
     private boolean includePK;
@@ -60,7 +63,91 @@ public class IckleConvertionVisitor extends SQLStringVisitor {
     }
 
     public Table getTable() {
-        return table.getMetadataObject();
+        return namedTable.getMetadataObject();
+    }
+
+    public TeiidTableMarsheller getMarshaller() throws TranslatorException {
+        return new TeiidTableMarsheller(getTable().getName(), getWireMap());
+    }
+
+    public TreeMap<Integer, TableWireFormat> getWireMap() throws TranslatorException {
+        Table parentTbl = this.namedTable.getMetadataObject();
+        TreeMap<Integer, TableWireFormat> wireMap = buildWireMap(parentTbl, false);
+        Schema schema = parentTbl.getParent();
+        for (Table table:schema.getTables().values()) {
+            if (table.equals(parentTbl)) {
+                continue;
+            }
+            String mergeName = ProtobufMetadataProcessor.getMerge(table);
+            if (mergeName != null && mergeName.equals(parentTbl.getFullName())) {
+                int parentTag = ProtobufMetadataProcessor.getParentTag(table);
+                String parentName = ProtobufMetadataProcessor.getMessageName(metadata.getTable(mergeName));
+                String childName = ProtobufMetadataProcessor.getMessageName(table);
+                TableWireFormat child = new TableWireFormat(childName, parentTag);
+                wireMap.put(child.getReadTag(), child);
+                TreeMap<Integer, TableWireFormat> childWireMap = buildWireMap(table, true);
+                for (TableWireFormat twf : childWireMap.values()) {
+                    child.addNested(twf);
+                }
+            }
+        }
+        return wireMap;
+    }
+
+    private TreeMap<Integer, TableWireFormat> buildWireMap(Table table, boolean nested) throws TranslatorException {
+        TreeMap<Integer, TableWireFormat> wireMap = new TreeMap<>();
+        for (Column column: table.getColumns()) {
+            if (ProtobufMetadataProcessor.getPseudo(column) != null) {
+                continue;
+            }
+            int parentTag = ProtobufMetadataProcessor.getParentTag(column);
+            if ( parentTag == -1) {
+                int tag = ProtobufMetadataProcessor.getTag(column);
+                String name = getDocumentAttributeName(column, nested);
+                TableWireFormat twf = new TableWireFormat(name, tag, column);
+                wireMap.put(twf.getReadTag(), twf);
+            } else {
+                int tag = ProtobufMetadataProcessor.getTag(column);
+                String name = getDocumentAttributeName(column, true);
+                TableWireFormat child = new TableWireFormat(name, tag, column);
+
+                String parentName = ProtobufMetadataProcessor.getMessageName(column);
+                TableWireFormat parent = new TableWireFormat(parentName, parentTag);
+                TableWireFormat existing = wireMap.get(parent.getReadTag());
+                if (existing == null) {
+                    wireMap.put(parent.getReadTag(), parent);
+                } else {
+                    parent = existing;
+                }
+                parent.addNested(child);
+            }
+        }
+        return wireMap;
+    }
+
+    String getDocumentAttributeName(Column column, boolean nested) throws TranslatorException {
+        String nis = getName(column);
+
+        // when a message name is present on the column, then this column is embedded from 1 to 1 relation
+        // or if this column's table is merged, then that table is from 1 to many relation. in each case attribute
+        // name is a fully qualified name.
+        String parentMessageName = ProtobufMetadataProcessor.getMessageName((Table)column.getParent());
+        String messageName = ProtobufMetadataProcessor.getMessageName(column);
+        if (messageName == null) {
+            String mergeName =  ProtobufMetadataProcessor.getMerge((Table)column.getParent());
+            if (mergeName != null) {
+                // this is 1-2-many case. The message-name on table properties
+                messageName = ProtobufMetadataProcessor.getMessageName((Table)column.getParent());
+                parentMessageName = ProtobufMetadataProcessor.getMessageName(metadata.getTable(mergeName));
+            }
+        }
+        if (messageName != null) {
+            nis = messageName + "/" + nis;
+        }
+        if (nested) {
+            return parentMessageName+"/"+nis;
+        }
+        return nis;
     }
 
     @Override
@@ -78,12 +165,12 @@ public class IckleConvertionVisitor extends SQLStringVisitor {
         String mergedTableName = ProtobufMetadataProcessor.getMerge(obj.getMetadataObject());
         if (mergedTableName == null) {
             messageName = getMessageName(obj.getMetadataObject());
-            this.table = obj;
+            this.namedTable = obj;
         } else {
             try {
                 Table mergedTable = this.metadata.getTable(mergedTableName);
                 messageName = getMessageName(mergedTable);
-                this.table = new NamedTable(mergedTable.getName(), obj.getCorrelationName(), mergedTable);
+                this.namedTable = new NamedTable(mergedTable.getName(), obj.getCorrelationName(), mergedTable);
             } catch (TranslatorException e) {
                 this.exceptions.add(e);
             }
@@ -231,7 +318,7 @@ public class IckleConvertionVisitor extends SQLStringVisitor {
             }
             column = normalizePseudoColumn(column);
             if (!this.includePK || !isPartOfPrimaryKey(column.getName())) {
-                this.projectedExpressions.add(new ColumnReference(this.table, column.getName(), column, column.getJavaType()));
+                this.projectedExpressions.add(new ColumnReference(this.namedTable, column.getName(), column, column.getJavaType()));
             }
             if (ProtobufMetadataProcessor.getMessageName(column) != null
                     || ProtobufMetadataProcessor.getMerge((Table) column.getParent()) != null) {
@@ -277,8 +364,12 @@ public class IckleConvertionVisitor extends SQLStringVisitor {
     }
 
     String getQualifiedName(Column column) {
-        String aliasName = this.table.getCorrelationName();
+        String aliasName = this.namedTable.getCorrelationName();
         String nis = getName(column);
+        String parentName = ProtobufMetadataProcessor.getParentColumnName(column);
+        if (parentName != null) {
+            nis = parentName + Tokens.DOT + nis;
+        }
         if (aliasName != null) {
             return aliasName + Tokens.DOT + nis;
         }

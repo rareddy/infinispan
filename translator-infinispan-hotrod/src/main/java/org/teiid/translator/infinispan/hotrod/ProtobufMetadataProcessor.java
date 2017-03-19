@@ -13,6 +13,7 @@ import org.infinispan.commons.api.BasicCache;
 import org.infinispan.query.remote.client.ProtobufMetadataManagerConstants;
 import org.teiid.core.util.ObjectConverterUtil;
 import org.teiid.infinispan.api.InfinispanConnection;
+import org.teiid.infinispan.api.ProtobufDataManager;
 import org.teiid.infinispan.api.ProtobufResource;
 import org.teiid.language.SQLConstants.Tokens;
 import org.teiid.logging.LogConstants;
@@ -66,12 +67,17 @@ public class ProtobufMetadataProcessor implements MetadataProcessor<InfinispanCo
             description="Protobuf field tag number")
     public static final String TAG = MetadataFactory.ODATA_URI+"TAG"; //$NON-NLS-1$
 
-    @ExtensionMetadataProperty(applicable= {Table.class, Column.class},
+    @ExtensionMetadataProperty(applicable = {Table.class, Column.class},
             datatype=String.class,
             display="Protobuf Parent Tag Number",
-            description="Protobuf field parent tag number in the case of embedded documents")
+            description="Protobuf field parent tag number in the case of complex document")
     public static final String PARENT_TAG = MetadataFactory.ODATA_URI+"PARENT_TAG"; //$NON-NLS-1$
 
+    @ExtensionMetadataProperty(applicable= Column.class,
+            datatype=String.class,
+            display="column's parent column name",
+            description="Protobuf field parent column name in the case of complex document")
+    public static final String PARENT_COLUMN_NAME = MetadataFactory.ODATA_URI+"PARENT_COLUMN_NAME"; //$NON-NLS-1$
 
     @ExtensionMetadataProperty(applicable=Column.class,
             datatype=String.class,
@@ -179,7 +185,7 @@ public class ProtobufMetadataProcessor implements MetadataProcessor<InfinispanCo
         table.setAnnotation(messageElement.documentation());
 
         for (FieldElement fieldElement:messageElement.fields()) {
-            addColumn(mf, messageTypes, enumTypes, columnPrefix, table, fieldElement, ignoreTables);
+            addColumn(mf, messageTypes, enumTypes, columnPrefix, table, fieldElement, ignoreTables, false);
         }
         return table;
     }
@@ -187,7 +193,7 @@ public class ProtobufMetadataProcessor implements MetadataProcessor<InfinispanCo
     private Column addColumn(MetadataFactory mf,
             List<MessageElement> messageTypes, List<EnumElement> enumTypes,
             String parentTableColumn, Table table,
-            FieldElement fieldElement, HashSet<String> ignoreTables) throws TranslatorException {
+            FieldElement fieldElement, HashSet<String> ignoreTables, boolean nested) throws TranslatorException {
 
         DataType type = fieldElement.type();
         String annotation = fieldElement.documentation();
@@ -195,7 +201,7 @@ public class ProtobufMetadataProcessor implements MetadataProcessor<InfinispanCo
 
         String teiidType = null;
         if (isEnum(messageTypes, enumTypes, type)) {
-            teiidType = ProtoTypeManager.teiidType(type, isCollection(fieldElement), true);
+            teiidType = ProtobufDataManager.teiidType(type, isCollection(fieldElement), true);
         } else if (isMessage(messageTypes, type)) {
             // this is nested table. If the nested table has PK, then we will configure external
             // if not we will consider this as embedded with primary table.
@@ -227,11 +233,10 @@ public class ProtobufMetadataProcessor implements MetadataProcessor<InfinispanCo
 
                     // since this nested table can not be reached directly, put a access
                     // pattern on it.
-                    if (nestedTable.getPrimaryKey() == null) {
-                        mf.addAccessPattern("AP_"+addedColumn.getName().toUpperCase(), Arrays.asList(addedColumn.getName()), nestedTable);
-                        nestedTable.setProperty(MERGE, table.getFullName());
-                        nestedTable.setProperty(PARENT_TAG, Integer.toString(fieldElement.tag()));
-                    }
+                    mf.addAccessPattern("AP_"+addedColumn.getName().toUpperCase(), Arrays.asList(addedColumn.getName()), nestedTable);
+                    nestedTable.setProperty(MERGE, table.getFullName());
+                    nestedTable.setProperty(PARENT_TAG, Integer.toString(fieldElement.tag()));
+                    nestedTable.setProperty(PARENT_COLUMN_NAME, columnName);
                 } else {
                     ignoreTables.add(nestedName);
                     LogManager.logInfo(LogConstants.CTX_CONNECTOR,
@@ -241,25 +246,29 @@ public class ProtobufMetadataProcessor implements MetadataProcessor<InfinispanCo
                 ignoreTables.add(nestedMessageElement.name());
                 // inline all the columns from the message and return
                 for (FieldElement nestedElement:nestedMessageElement.fields()) {
-                    Column nestedColumn = addColumn(mf, messageTypes, enumTypes, columnName, table, nestedElement, ignoreTables);
-                    nestedColumn.setNameInSource(columnName+Tokens.DOT+nestedElement.name());
+                    Column nestedColumn = addColumn(mf, messageTypes, enumTypes, columnName, table, nestedElement, ignoreTables, true);
+                    nestedColumn.setNameInSource(nestedElement.name());
                     nestedColumn.setProperty(MESSAGE_NAME, nestedMessageElement.qualifiedName());
                     nestedColumn.setProperty(PARENT_TAG, Integer.toString(fieldElement.tag()));
+                    nestedColumn.setProperty(PARENT_COLUMN_NAME, columnName);
                 }
             }
             return null;
         } else {
-            teiidType = ProtoTypeManager.teiidType(type, isCollection(fieldElement), false);
+            teiidType = ProtobufDataManager.teiidType(type, isCollection(fieldElement), false);
         }
 
-        Column c = mf.addColumn(parentTableColumn == null ? columnName : parentTableColumn + "_" + columnName,
-                teiidType, table);
+        Column c = null;
+        if (nested) {
+            c = mf.addColumn(parentTableColumn + "_" + columnName, teiidType, table);
+        } else {
+            c = mf.addColumn(columnName, teiidType, table);
+        }
+        c.setNativeType(fieldElement.type().toString());
         c.setUpdatable(true);
         c.setNullType(fieldElement.label() == Label.REQUIRED ? NullType.No_Nulls : NullType.Nullable);
         c.setProperty(TAG, Integer.toString(fieldElement.tag()));
-        if (parentTableColumn != null) {
-            c.setNameInSource(parentTableColumn+Tokens.DOT+columnName);
-        }
+
         // process default value
         if (fieldElement.getDefault() != null) {
             if (isEnum(messageTypes, enumTypes, type)) {
@@ -393,10 +402,20 @@ public class ProtobufMetadataProcessor implements MetadataProcessor<InfinispanCo
     }
 
     static int getParentTag(Column column) {
-        return Integer.parseInt(column.getProperty(TAG, false));
+        if (column.getProperty(PARENT_TAG, false) != null) {
+            return Integer.parseInt(column.getProperty(PARENT_TAG, false));
+        }
+        return -1;
     }
 
     static int getParentTag(Table table) {
-        return Integer.parseInt(table.getProperty(TAG, false));
+        if (table.getProperty(PARENT_TAG, false) != null) {
+            return Integer.parseInt(table.getProperty(PARENT_TAG, false));
+        }
+        return -1;
+    }
+
+    static String getParentColumnName(Column column) {
+        return column.getProperty(PARENT_COLUMN_NAME, false);
     }
 }

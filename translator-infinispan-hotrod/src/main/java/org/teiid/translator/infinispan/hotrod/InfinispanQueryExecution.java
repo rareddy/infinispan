@@ -21,7 +21,6 @@
  */
 package org.teiid.translator.infinispan.hotrod;
 
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Iterator;
 import java.util.List;
@@ -34,11 +33,9 @@ import org.infinispan.query.dsl.QueryFactory;
 import org.teiid.infinispan.api.InfinispanConnection;
 import org.teiid.infinispan.api.TeiidMarshallerContext;
 import org.teiid.infinispan.api.TeiidMarsheller;
-import org.teiid.infinispan.api.TeiidTableMarsheller;
 import org.teiid.language.QueryExpression;
 import org.teiid.logging.LogConstants;
 import org.teiid.logging.LogManager;
-import org.teiid.metadata.Column;
 import org.teiid.metadata.RuntimeMetadata;
 import org.teiid.metadata.Table;
 import org.teiid.translator.DataNotAvailableException;
@@ -70,7 +67,7 @@ public class InfinispanQueryExecution implements ResultSetExecution {
             IckleConvertionVisitor visitor = new IckleConvertionVisitor(metadata, false);
             visitor.append(this.command);
             Table table = visitor.getTable();
-            this.marshaller = getMarsheller(table);
+            this.marshaller = visitor.getMarshaller();
             TeiidMarshallerContext.setMarsheller(this.marshaller);
             String queryStr = visitor.getQuery(false);
             LogManager.logDetail(LogConstants.CTX_CONNECTOR, "SourceQuery:", queryStr);
@@ -82,19 +79,6 @@ public class InfinispanQueryExecution implements ResultSetExecution {
         } finally {
             TeiidMarshallerContext.setMarsheller(null);
         }
-    }
-
-
-    private TeiidMarsheller.Marsheller getMarsheller(Table table) {
-        ArrayList<Integer> tagOrder = new ArrayList<>();
-        ArrayList<Class<?>> types = new ArrayList<>();
-        for (Column column : table.getColumns()) {
-            if (column.isSelectable()) {
-                tagOrder.add(ProtobufMetadataProcessor.getTag(column));
-                types.add(column.getJavaType());
-            }
-        }
-        return new TeiidTableMarsheller(ProtobufMetadataProcessor.getMessageName(table), tagOrder, types);
     }
 
     @Override

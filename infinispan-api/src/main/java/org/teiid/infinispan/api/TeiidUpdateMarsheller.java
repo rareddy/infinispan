@@ -53,7 +53,7 @@ public class TeiidUpdateMarsheller implements TeiidMarsheller.Marsheller {
         for (Column column: table.getColumns()) {
             int tag = Integer.parseInt(column.getProperty(TAG, false));
             Class<?> type = column.getJavaType();
-            row.put(column.getName(), TeiidMarsheller.readAttribute(in, type, tag));
+            //row.put(column.getName(), TeiidMarsheller.readAttribute(in, type, tag));
         }
         return row;
     }
