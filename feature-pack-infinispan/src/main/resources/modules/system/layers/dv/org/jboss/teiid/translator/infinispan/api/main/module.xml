@@ -12,6 +12,7 @@
         <module name="javax.api" />
         <module name="org.jboss.teiid.common-core" />
         <module name="org.jboss.teiid.api" />    
+        <module name="org.jboss.teiid.translator.document.api" />    
    	    <module name="org.infinispan.infinispan-remote" />
     </dependencies>   
 </module>

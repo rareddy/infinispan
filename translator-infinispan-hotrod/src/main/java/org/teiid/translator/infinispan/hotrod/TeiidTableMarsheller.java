@@ -334,6 +334,7 @@ public class TeiidTableMarsheller implements TeiidMarsheller.Marsheller {
     }
 
 
+
     class MarshallerDelegate implements BaseMarshallerDelegate<Document> {
         @Override
         public BaseMarshaller<Document> getMarshaller() {

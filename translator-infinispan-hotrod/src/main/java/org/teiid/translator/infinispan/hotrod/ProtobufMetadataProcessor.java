@@ -73,7 +73,7 @@ public class ProtobufMetadataProcessor implements MetadataProcessor<InfinispanCo
             description="Protobuf field parent tag number in the case of complex document")
     public static final String PARENT_TAG = MetadataFactory.ODATA_URI+"PARENT_TAG"; //$NON-NLS-1$
 
-    @ExtensionMetadataProperty(applicable= Column.class,
+    @ExtensionMetadataProperty(applicable= {Table.class, Column.class},
             datatype=String.class,
             display="column's parent column name",
             description="Protobuf field parent column name in the case of complex document")
@@ -181,7 +181,7 @@ public class ProtobufMetadataProcessor implements MetadataProcessor<InfinispanCo
 
         Table table = mf.addTable(tableName);
         table.setSupportsUpdate(true);
-        table.setProperty(MESSAGE_NAME, messageElement.qualifiedName());
+        table.setNameInSource(messageElement.qualifiedName());
         table.setAnnotation(messageElement.documentation());
 
         for (FieldElement fieldElement:messageElement.fields()) {
@@ -385,8 +385,15 @@ public class ProtobufMetadataProcessor implements MetadataProcessor<InfinispanCo
         return column.getProperty(PSEUDO, false);
     }
 
+    static boolean isPseudo(Column column) {
+        return (column.getProperty(PSEUDO, false) != null);
+    }
+
     static String getMessageName(Table table) {
-        return table.getProperty(MESSAGE_NAME, false);
+        if (table.getNameInSource() != null) {
+            return table.getNameInSource();
+        }
+        return table.getName();
     }
 
     static String getMessageName(Column column) {
@@ -418,4 +425,9 @@ public class ProtobufMetadataProcessor implements MetadataProcessor<InfinispanCo
     static String getParentColumnName(Column column) {
         return column.getProperty(PARENT_COLUMN_NAME, false);
     }
+
+    static String getParentColumnName(Table table) {
+        return table.getProperty(PARENT_COLUMN_NAME, false);
+    }
+
 }

@@ -25,6 +25,7 @@ import java.util.TreeMap;
 
 import org.infinispan.protostream.descriptors.Type;
 import org.infinispan.protostream.impl.WireFormat;
+import org.teiid.core.TeiidRuntimeException;
 import org.teiid.metadata.Column;
 
 public class TableWireFormat {
@@ -82,17 +83,23 @@ public class TableWireFormat {
     private Type buildProbufType(String nativeType, Class<?> columnType) {
         Type hotrodType;
         if (columnType.isArray()) {
-            if (nativeType != null) {
-                hotrodType = ProtobufDataManager.parseProtobufType(nativeType);
-            } else {
-                hotrodType = ProtobufDataManager.getCompatibleProtobufType(columnType.getComponentType());
-            }
+            hotrodType = getProtobufType(nativeType, columnType.getComponentType());
         } else {
-            if (nativeType != null) {
+            hotrodType = getProtobufType(nativeType, columnType);
+        }
+        return hotrodType;
+    }
+
+    private Type getProtobufType(String nativeType, Class<?> columnType) {
+        Type hotrodType;
+        if (nativeType != null) {
+            try {
                 hotrodType = ProtobufDataManager.parseProtobufType(nativeType);
-            } else {
+            } catch (TeiidRuntimeException e) {
                 hotrodType = ProtobufDataManager.getCompatibleProtobufType(columnType);
             }
+        } else {
+            hotrodType = ProtobufDataManager.getCompatibleProtobufType(columnType);
         }
         return hotrodType;
     }

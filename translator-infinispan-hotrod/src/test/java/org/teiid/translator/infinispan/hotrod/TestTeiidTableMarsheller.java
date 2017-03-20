@@ -54,7 +54,9 @@ import org.teiid.infinispan.api.TeiidMarshallerContext;
 import org.teiid.infinispan.api.TeiidSerializationContext;
 import org.teiid.language.Select;
 import org.teiid.metadata.MetadataFactory;
+import org.teiid.metadata.RuntimeMetadata;
 import org.teiid.query.metadata.TransformationMetadata;
+import org.teiid.translator.TranslatorException;
 import org.teiid.translator.document.Document;
 import org.teiid.translator.marshallers.G1;
 import org.teiid.translator.marshallers.G1Marshaller;
@@ -74,7 +76,8 @@ public class TestTeiidTableMarsheller {
         TransformationMetadata metadata = TestProtobufMetadataProcessor.getTransformationMetadata(mf, ef);
         TranslationUtility utility = new TranslationUtility(metadata);
         Select cmd = (Select)utility.parseCommand(query);
-        IckleConvertionVisitor visitor = new IckleConvertionVisitor(new RuntimeMetadataImpl(metadata), false);
+        RuntimeMetadata runtimeMetadata = new RuntimeMetadataImpl(metadata);
+        IckleConvertionVisitor visitor = new IckleConvertionVisitor(runtimeMetadata, false);
         visitor.visitNode(cmd);
         visitor.getQuery(false);
         return visitor;
@@ -84,7 +87,8 @@ public class TestTeiidTableMarsheller {
     public void testReadSimple() throws Exception {
         IckleConvertionVisitor visitor = helpExecute("select * from G1");
         TeiidTableMarsheller marshaller = new TeiidTableMarsheller(
-                ProtobufMetadataProcessor.getMessageName(visitor.getTable()), visitor.getWireMap());
+                ProtobufMetadataProcessor.getMessageName(visitor.getTable()),
+                MarshallerBuilder.getWireMap(visitor.getTable(), visitor.getMetadata()));
         TeiidMarshallerContext.setMarsheller(marshaller);
 
         SerializationContext baseCtx = ProtobufUtil.newSerializationContext(Configuration.builder().build());
@@ -124,7 +128,8 @@ public class TestTeiidTableMarsheller {
     public void testWriteSimple() throws Exception {
         IckleConvertionVisitor visitor = helpExecute("select * from G1");
         TeiidTableMarsheller marshaller = new TeiidTableMarsheller(
-                ProtobufMetadataProcessor.getMessageName(visitor.getTable()), visitor.getWireMap());
+                ProtobufMetadataProcessor.getMessageName(visitor.getTable()),
+                MarshallerBuilder.getWireMap(visitor.getTable(), visitor.getMetadata()));
         TeiidMarshallerContext.setMarsheller(marshaller);
 
         SerializationContext baseCtx = ProtobufUtil.newSerializationContext(Configuration.builder().build());
@@ -139,7 +144,8 @@ public class TestTeiidTableMarsheller {
             }
         });
 
-        InfinispanDocument g1 = new InfinispanDocument("pm1.G1", visitor.getWireMap(), null);
+        InfinispanDocument g1 = new InfinispanDocument("pm1.G1",
+                MarshallerBuilder.getWireMap(visitor.getTable(), visitor.getMetadata()), null);
         g1.addProperty("e1", 1);
         g1.addProperty("e2", "foo");
         g1.addProperty("e3", 1.234f);
@@ -222,7 +228,10 @@ public class TestTeiidTableMarsheller {
         return g2;
     }
 
-    private InfinispanDocument buildG2(TreeMap<Integer, TableWireFormat> wireMap) {
+    private InfinispanDocument buildG2(IckleConvertionVisitor visitor) throws TranslatorException {
+        TreeMap<Integer, TableWireFormat> wireMap = MarshallerBuilder.getWireMap(visitor.getTable(),
+                visitor.getMetadata());
+
         InfinispanDocument g2 = new InfinispanDocument("pm1.G2", wireMap, null);
         g2.addProperty("e1", 1);
         g2.addProperty("e2", "foo");
@@ -284,7 +293,8 @@ public class TestTeiidTableMarsheller {
     public void testReadComplex() throws Exception {
         IckleConvertionVisitor visitor = helpExecute("select * from G2");
         TeiidTableMarsheller marshaller = new TeiidTableMarsheller(
-                ProtobufMetadataProcessor.getMessageName(visitor.getTable()), visitor.getWireMap());
+                ProtobufMetadataProcessor.getMessageName(visitor.getTable()),
+                MarshallerBuilder.getWireMap(visitor.getTable(), visitor.getMetadata()));
         TeiidMarshallerContext.setMarsheller(marshaller);
 
         SerializationContext baseCtx = ProtobufUtil.newSerializationContext(Configuration.builder().build());
@@ -322,7 +332,8 @@ public class TestTeiidTableMarsheller {
     public void testWriteComplex() throws Exception {
         IckleConvertionVisitor visitor = helpExecute("select * from G2");
         TeiidTableMarsheller marshaller = new TeiidTableMarsheller(
-                ProtobufMetadataProcessor.getMessageName(visitor.getTable()), visitor.getWireMap());
+                ProtobufMetadataProcessor.getMessageName(visitor.getTable()),
+                MarshallerBuilder.getWireMap(visitor.getTable(), visitor.getMetadata()));
         TeiidMarshallerContext.setMarsheller(marshaller);
 
         SerializationContext baseCtx = ProtobufUtil.newSerializationContext(Configuration.builder().build());
@@ -339,7 +350,8 @@ public class TestTeiidTableMarsheller {
             }
         });
 
-        InfinispanDocument g2 = buildG2(visitor.getWireMap());
+
+        InfinispanDocument g2 = buildG2(visitor);
 
         ByteArrayOutputStream baos = new ByteArrayOutputStream();
         RawProtoStreamWriter out = RawProtoStreamWriterImpl.newInstance(baos);

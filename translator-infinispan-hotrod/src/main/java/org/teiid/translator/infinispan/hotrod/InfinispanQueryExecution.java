@@ -21,15 +21,10 @@
  */
 package org.teiid.translator.infinispan.hotrod;
 
-import java.util.Arrays;
-import java.util.Iterator;
 import java.util.List;
 
 import org.infinispan.client.hotrod.RemoteCache;
 import org.infinispan.client.hotrod.RemoteCacheManager;
-import org.infinispan.client.hotrod.Search;
-import org.infinispan.query.dsl.Query;
-import org.infinispan.query.dsl.QueryFactory;
 import org.teiid.infinispan.api.InfinispanConnection;
 import org.teiid.infinispan.api.TeiidMarshallerContext;
 import org.teiid.infinispan.api.TeiidMarsheller;
@@ -49,7 +44,7 @@ public class InfinispanQueryExecution implements ResultSetExecution {
     private InfinispanConnection connection;
     private RuntimeMetadata metadata;
     private ExecutionContext executionContext;
-    private Paginate results;
+    private InfinispanResponse results;
     private TeiidMarsheller.Marsheller marshaller;
 
     public InfinispanQueryExecution(InfinispanExecutionFactory translator,
@@ -67,15 +62,15 @@ public class InfinispanQueryExecution implements ResultSetExecution {
             IckleConvertionVisitor visitor = new IckleConvertionVisitor(metadata, false);
             visitor.append(this.command);
             Table table = visitor.getTable();
-            this.marshaller = visitor.getMarshaller();
+            this.marshaller = MarshallerBuilder.getMarshaller(table, this.metadata);
             TeiidMarshallerContext.setMarsheller(this.marshaller);
             String queryStr = visitor.getQuery(false);
             LogManager.logDetail(LogConstants.CTX_CONNECTOR, "SourceQuery:", queryStr);
 
             // if the message in defined in different cache than the default, switch it out now.
             RemoteCache<Object, Object> cache =  getCache(table, connection);
-            results = new Paginate(cache, queryStr, this.executionContext.getBatchSize(), visitor.getRowLimit(),
-                    visitor.getRowOffset());
+            results = new InfinispanResponse(cache, queryStr, this.executionContext.getBatchSize(), visitor.getRowLimit(),
+                    visitor.getRowOffset(), visitor.getProjectedDocumentAttributes(), visitor.getDocumentNode());
         } finally {
             TeiidMarshallerContext.setMarsheller(null);
         }
@@ -106,74 +101,5 @@ public class InfinispanQueryExecution implements ResultSetExecution {
             cache = ((RemoteCacheManager)connection.getCacheFactory()).getCache(cacheName);
         }
         return cache;
-    }
-
-    static class Paginate {
-        private Query query;
-        private int batchSize;
-        private Integer offset;
-        private Integer limit;
-        private boolean lastBatch = false;
-        private Iterator<Object> responseIter;
-
-        public Paginate(RemoteCache<Object, Object> cache, String queryStr, int batchSize, Integer limit,
-                Integer offset) {
-            this.batchSize = batchSize;
-            this.offset = offset == null?0:offset;
-            this.limit = limit;
-
-            QueryFactory qf = Search.getQueryFactory(cache);
-            this.query = qf.create(queryStr);
-        }
-
-        void fetchNextBatch() {
-            query.startOffset(offset);
-
-            int nextBatch = this.batchSize;
-            if (this.limit != null) {
-                if (this.limit > nextBatch) {
-                    this.limit = this.limit - nextBatch;
-                } else {
-                    nextBatch = this.limit;
-                    this.limit = 0;
-                    this.lastBatch = true;
-                }
-            }
-            query.maxResults(nextBatch);
-            List<Object> values = query.list();
-
-            if (query.getResultSize() < nextBatch) {
-                this.lastBatch = true;
-            }
-
-            this.responseIter = values.iterator();
-            offset = offset + nextBatch;
-            query.startOffset(offset);
-            values = query.list();
-        }
-
-        public List<Object> getNextRow(){
-            if (responseIter == null) {
-                fetchNextBatch();
-            }
-
-            if (responseIter != null && responseIter.hasNext()){
-                Object row = this.responseIter.next();
-                if (row instanceof Object[]) {
-                    return Arrays.asList((Object[])row);
-                }
-                return List.class.cast(row);
-            } else {
-                if (!lastBatch) {
-                    fetchNextBatch();
-                    Object row = this.responseIter.next();
-                    if (row instanceof Object[]) {
-                        return Arrays.asList((Object[])row);
-                    }
-                    return List.class.cast(row);
-                }
-            }
-            return null;
-        }
     }
 }

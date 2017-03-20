@@ -25,14 +25,12 @@ import static org.teiid.language.SQLConstants.Reserved.HAVING;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.TreeMap;
-
-import org.teiid.infinispan.api.TableWireFormat;
 import org.teiid.language.AggregateFunction;
 import org.teiid.language.ColumnReference;
 import org.teiid.language.DerivedColumn;
 import org.teiid.language.Expression;
 import org.teiid.language.Function;
+import org.teiid.language.Join.JoinType;
 import org.teiid.language.Limit;
 import org.teiid.language.NamedTable;
 import org.teiid.language.SQLConstants;
@@ -42,19 +40,23 @@ import org.teiid.language.visitor.SQLStringVisitor;
 import org.teiid.metadata.Column;
 import org.teiid.metadata.KeyRecord;
 import org.teiid.metadata.RuntimeMetadata;
-import org.teiid.metadata.Schema;
 import org.teiid.metadata.Table;
 import org.teiid.translator.TranslatorException;
+import org.teiid.translator.document.DocumentNode;
 
 public class IckleConvertionVisitor extends SQLStringVisitor {
     protected ArrayList<TranslatorException> exceptions = new ArrayList<TranslatorException>();
     protected RuntimeMetadata metadata;
     protected List<Expression> projectedExpressions = new ArrayList<>();
     protected NamedTable namedTable;
+    protected NamedTable originalNamedTable;
     private Integer rowLimit;
     private Integer rowOffset;
     private boolean includePK;
     private boolean avoidProjection = false;
+    private InfinispanDocumentNode rootNode;
+    private DocumentNode joinedNode;
+    private List<String> projectedDocumentAttributes = new ArrayList<>();
 
     public IckleConvertionVisitor(RuntimeMetadata metadata, boolean includePK) {
         this.metadata = metadata;
@@ -66,92 +68,10 @@ public class IckleConvertionVisitor extends SQLStringVisitor {
         return namedTable.getMetadataObject();
     }
 
-    public TeiidTableMarsheller getMarshaller() throws TranslatorException {
-        return new TeiidTableMarsheller(getTable().getName(), getWireMap());
-    }
-
-    public TreeMap<Integer, TableWireFormat> getWireMap() throws TranslatorException {
-        Table parentTbl = this.namedTable.getMetadataObject();
-        TreeMap<Integer, TableWireFormat> wireMap = buildWireMap(parentTbl, false);
-        Schema schema = parentTbl.getParent();
-        for (Table table:schema.getTables().values()) {
-            if (table.equals(parentTbl)) {
-                continue;
-            }
-            String mergeName = ProtobufMetadataProcessor.getMerge(table);
-            if (mergeName != null && mergeName.equals(parentTbl.getFullName())) {
-                int parentTag = ProtobufMetadataProcessor.getParentTag(table);
-                String parentName = ProtobufMetadataProcessor.getMessageName(metadata.getTable(mergeName));
-                String childName = ProtobufMetadataProcessor.getMessageName(table);
-                TableWireFormat child = new TableWireFormat(childName, parentTag);
-                wireMap.put(child.getReadTag(), child);
-                TreeMap<Integer, TableWireFormat> childWireMap = buildWireMap(table, true);
-                for (TableWireFormat twf : childWireMap.values()) {
-                    child.addNested(twf);
-                }
-            }
-        }
-        return wireMap;
-    }
-
-    private TreeMap<Integer, TableWireFormat> buildWireMap(Table table, boolean nested) throws TranslatorException {
-        TreeMap<Integer, TableWireFormat> wireMap = new TreeMap<>();
-        for (Column column: table.getColumns()) {
-            if (ProtobufMetadataProcessor.getPseudo(column) != null) {
-                continue;
-            }
-            int parentTag = ProtobufMetadataProcessor.getParentTag(column);
-            if ( parentTag == -1) {
-                int tag = ProtobufMetadataProcessor.getTag(column);
-                String name = getDocumentAttributeName(column, nested);
-                TableWireFormat twf = new TableWireFormat(name, tag, column);
-                wireMap.put(twf.getReadTag(), twf);
-            } else {
-                int tag = ProtobufMetadataProcessor.getTag(column);
-                String name = getDocumentAttributeName(column, true);
-                TableWireFormat child = new TableWireFormat(name, tag, column);
-
-                String parentName = ProtobufMetadataProcessor.getMessageName(column);
-                TableWireFormat parent = new TableWireFormat(parentName, parentTag);
-                TableWireFormat existing = wireMap.get(parent.getReadTag());
-                if (existing == null) {
-                    wireMap.put(parent.getReadTag(), parent);
-                } else {
-                    parent = existing;
-                }
-                parent.addNested(child);
-            }
-        }
-        return wireMap;
-    }
-
-    String getDocumentAttributeName(Column column, boolean nested) throws TranslatorException {
-        String nis = getName(column);
-
-        // when a message name is present on the column, then this column is embedded from 1 to 1 relation
-        // or if this column's table is merged, then that table is from 1 to many relation. in each case attribute
-        // name is a fully qualified name.
-        String parentMessageName = ProtobufMetadataProcessor.getMessageName((Table)column.getParent());
-        String messageName = ProtobufMetadataProcessor.getMessageName(column);
-        if (messageName == null) {
-            String mergeName =  ProtobufMetadataProcessor.getMerge((Table)column.getParent());
-            if (mergeName != null) {
-                // this is 1-2-many case. The message-name on table properties
-                messageName = ProtobufMetadataProcessor.getMessageName((Table)column.getParent());
-                parentMessageName = ProtobufMetadataProcessor.getMessageName(metadata.getTable(mergeName));
-            }
-        }
-        if (messageName != null) {
-            nis = messageName + "/" + nis;
-        }
-        if (nested) {
-            return parentMessageName+"/"+nis;
-        }
-        return nis;
-    }
-
     @Override
     public void visit(NamedTable obj) {
+        this.originalNamedTable = obj;
+
         if (this.includePK) {
             KeyRecord pk = obj.getMetadataObject().getPrimaryKey();
             if (pk != null) {
@@ -166,11 +86,20 @@ public class IckleConvertionVisitor extends SQLStringVisitor {
         if (mergedTableName == null) {
             messageName = getMessageName(obj.getMetadataObject());
             this.namedTable = obj;
+            if (rootNode == null) {
+                this.rootNode = new InfinispanDocumentNode(obj.getMetadataObject(), true);
+                this.joinedNode = this.rootNode;
+            }
         } else {
             try {
                 Table mergedTable = this.metadata.getTable(mergedTableName);
                 messageName = getMessageName(mergedTable);
                 this.namedTable = new NamedTable(mergedTable.getName(), obj.getCorrelationName(), mergedTable);
+                if (rootNode == null) {
+                    this.rootNode = new InfinispanDocumentNode(mergedTable, true);
+                    this.joinedNode = this.rootNode.joinWith(JoinType.INNER_JOIN,
+                            new InfinispanDocumentNode(obj.getMetadataObject(), true));
+                }
             } catch (TranslatorException e) {
                 this.exceptions.add(e);
             }
@@ -318,20 +247,32 @@ public class IckleConvertionVisitor extends SQLStringVisitor {
             }
             column = normalizePseudoColumn(column);
             if (!this.includePK || !isPartOfPrimaryKey(column.getName())) {
-                this.projectedExpressions.add(new ColumnReference(this.namedTable, column.getName(), column, column.getJavaType()));
+                if (column.getParent().equals(this.namedTable.getMetadataObject())){
+                    this.projectedExpressions.add(new ColumnReference(this.namedTable, column.getName(), column, column.getJavaType()));
+                } else {
+                    this.projectedExpressions.add(new ColumnReference(this.originalNamedTable, column.getName(), column, column.getJavaType()));
+                }
             }
+            boolean nested = false;
             if (ProtobufMetadataProcessor.getMessageName(column) != null
                     || ProtobufMetadataProcessor.getMerge((Table) column.getParent()) != null) {
                 this.avoidProjection = true;
+                nested = true;
+            }
+            try {
+                this.projectedDocumentAttributes.add(MarshallerBuilder.getDocumentAttributeName(column, nested, this.metadata));
+            } catch (TranslatorException e) {
+                this.exceptions.add(e);
             }
         }
-        else if (obj.getExpression() instanceof AggregateFunction) {
+        else if (obj.getExpression() instanceof Function) {
+            if (this.namedTable.equals(this.originalNamedTable)) {
+                this.exceptions.add(new TranslatorException(InfinispanPlugin.Event.TEIID25008, InfinispanPlugin.Util.gs(InfinispanPlugin.Event.TEIID25008)));
+            }
             AggregateFunction func = (AggregateFunction)obj.getExpression();
             this.projectedExpressions.add(func);
-        }
-        else if (obj.getExpression() instanceof Function) {
-            Function func = (Function)obj.getExpression();
-            this.projectedExpressions.add(func);
+            // Aggregate functions can not be part of the implicit query projection when the complex object is involved
+            // thus not adding to projectedDocumentAttributes. i.e. sum(g2.g3.e1) is not supported by Infinispan AFAIK.
         }
         else {
             this.exceptions.add(new TranslatorException(InfinispanPlugin.Util.gs(InfinispanPlugin.Event.TEIID25002, obj)));
@@ -345,7 +286,7 @@ public class IckleConvertionVisitor extends SQLStringVisitor {
                 Table columnParent = (Table)column.getParent();
                 Table pseudoColumnParent = this.metadata.getTable(
                         ProtobufMetadataProcessor.getMerge(columnParent));
-                return pseudoColumnParent.getColumnByName(pseudo);
+                return pseudoColumnParent.getColumnByName(getName(column));
             } catch (TranslatorException e) {
                 this.exceptions.add(e);
             }
@@ -367,6 +308,9 @@ public class IckleConvertionVisitor extends SQLStringVisitor {
         String aliasName = this.namedTable.getCorrelationName();
         String nis = getName(column);
         String parentName = ProtobufMetadataProcessor.getParentColumnName(column);
+        if (parentName == null && !ProtobufMetadataProcessor.isPseudo(column)) {
+            parentName = ProtobufMetadataProcessor.getParentColumnName((Table)column.getParent());
+        }
         if (parentName != null) {
             nis = parentName + Tokens.DOT + nis;
         }
@@ -433,5 +377,17 @@ public class IckleConvertionVisitor extends SQLStringVisitor {
     @Override
     protected boolean useAsInGroupAlias(){
         return false;
+    }
+
+    public List<String> getProjectedDocumentAttributes() throws TranslatorException {
+        return projectedDocumentAttributes;
+    }
+
+    RuntimeMetadata getMetadata() {
+        return metadata;
+    }
+
+    InfinispanDocumentNode getDocumentNode() {
+        return this.rootNode;
     }
 }

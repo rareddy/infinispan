@@ -35,7 +35,6 @@ import org.teiid.translator.DataNotAvailableException;
 import org.teiid.translator.ExecutionContext;
 import org.teiid.translator.ProcedureExecution;
 import org.teiid.translator.TranslatorException;
-import org.teiid.translator.infinispan.hotrod.InfinispanQueryExecution.Paginate;
 
 public class InfinispanDirectExecution implements ProcedureExecution {
     private List<Argument> arguments;
@@ -43,7 +42,7 @@ public class InfinispanDirectExecution implements ProcedureExecution {
     private ExecutionContext executionContext;
     private RuntimeMetadata metadata;
     private InfinispanConnection connection;
-    private Paginate results;
+    private InfinispanResponse results;
 
     public InfinispanDirectExecution(List<Argument> arguments, Command command, ExecutionContext executionContext,
             RuntimeMetadata metadata, InfinispanConnection connection) {
@@ -68,7 +67,7 @@ public class InfinispanDirectExecution implements ProcedureExecution {
 
         // if the message in defined in different cache than the default, switch it out now.
         RemoteCache<Object, Object> cache =  getCache(cacheName, connection);
-        results = new Paginate(cache, queryStr, this.executionContext.getBatchSize(), null, null);
+        results = new InfinispanResponse(cache, queryStr, this.executionContext.getBatchSize(), null, null, null, null);
     }
 
     static RemoteCache<Object, Object> getCache(String cacheName, InfinispanConnection connection) throws TranslatorException {

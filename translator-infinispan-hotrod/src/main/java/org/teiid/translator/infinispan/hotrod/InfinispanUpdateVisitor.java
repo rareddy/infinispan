@@ -28,8 +28,6 @@ import java.util.TreeMap;
 
 import org.teiid.core.types.DataTypeManager;
 import org.teiid.core.types.TransformationException;
-import org.teiid.infinispan.api.TeiidMarsheller;
-import org.teiid.infinispan.api.TeiidUpdateMarsheller;
 import org.teiid.language.ColumnReference;
 import org.teiid.language.Delete;
 import org.teiid.language.Expression;
@@ -38,8 +36,8 @@ import org.teiid.language.Function;
 import org.teiid.language.Insert;
 import org.teiid.language.Literal;
 import org.teiid.language.SQLConstants;
-import org.teiid.language.Update;
 import org.teiid.language.SQLConstants.Tokens;
+import org.teiid.language.Update;
 import org.teiid.metadata.Column;
 import org.teiid.metadata.RuntimeMetadata;
 import org.teiid.translator.TranslatorException;
@@ -63,9 +61,6 @@ public class InfinispanUpdateVisitor extends IckleConvertionVisitor {
         return this.operationType;
     }
 
-    public TeiidMarsheller.Marsheller getMarsheller() {
-        return new TeiidUpdateMarsheller(getTable());
-    }
 
     public Map<String, Object> getPayload() {
         return payload;

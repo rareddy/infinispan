@@ -69,7 +69,7 @@ public class InfinispanUpdateExecution implements UpdateExecution {
 
         try {
             Table table = visitor.getTable();
-            TeiidMarshallerContext.setMarsheller(visitor.getMarsheller());
+            TeiidMarshallerContext.setMarsheller(MarshallerBuilder.getMarshaller(table, this.metadata));
             final String PK = table.getPrimaryKey().getColumns().get(0).getName();
 
             // if the message in defined in different cache than the default, switch it out now.
