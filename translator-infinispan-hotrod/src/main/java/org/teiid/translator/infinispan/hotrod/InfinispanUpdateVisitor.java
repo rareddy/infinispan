@@ -22,12 +22,13 @@
 package org.teiid.translator.infinispan.hotrod;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
 
-import org.teiid.core.types.DataTypeManager;
-import org.teiid.core.types.TransformationException;
+import org.teiid.infinispan.api.InfinispanDocument;
+import org.teiid.infinispan.api.TableWireFormat;
 import org.teiid.language.ColumnReference;
 import org.teiid.language.Delete;
 import org.teiid.language.Expression;
@@ -36,18 +37,21 @@ import org.teiid.language.Function;
 import org.teiid.language.Insert;
 import org.teiid.language.Literal;
 import org.teiid.language.SQLConstants;
-import org.teiid.language.SQLConstants.Tokens;
 import org.teiid.language.Update;
+import org.teiid.language.SQLConstants.Tokens;
 import org.teiid.metadata.Column;
 import org.teiid.metadata.RuntimeMetadata;
+import org.teiid.metadata.Table;
 import org.teiid.translator.TranslatorException;
 
 public class InfinispanUpdateVisitor extends IckleConvertionVisitor {
     protected enum OperationType {INSERT, UPDATE, DELETE, UPSERT};
     protected ArrayList<TranslatorException> exceptions = new ArrayList<TranslatorException>();
     private OperationType operationType;
-    private Map<String, Object> payload = new TreeMap<>();
+    private InfinispanDocument insertPayload;
+    private Map<String, Object> updatePayload = new HashMap<>();
     private Object identity;
+    private boolean nested;
 
     public InfinispanUpdateVisitor(RuntimeMetadata metadata) {
         super(metadata, true);
@@ -62,8 +66,16 @@ public class InfinispanUpdateVisitor extends IckleConvertionVisitor {
     }
 
 
-    public Map<String, Object> getPayload() {
-        return payload;
+    public InfinispanDocument getInsertPayload() {
+        return insertPayload;
+    }
+
+    public Map<String, Object> getUpdatePayload() {
+        return updatePayload;
+    }
+
+    public boolean isNestedOperation() {
+        return this.nested;
     }
 
     @Override
@@ -76,44 +88,84 @@ public class InfinispanUpdateVisitor extends IckleConvertionVisitor {
 
         Column pkColumn = getPrimaryKey();
 
-        // read the properties
-        int elementCount = obj.getColumns().size();
-        for (int i = 0; i < elementCount; i++) {
-            Column column = obj.getColumns().get(i).getMetadataObject();
-            List<Expression> values = ((ExpressionValueSource)obj.getValueSource()).getValues();
-            Expression expr = values.get(i);
-            Object value = resolveExpressionValue(expr);
-            this.payload.put(column.getName(), value);
-
-            if (pkColumn != null && column.equals(pkColumn)) {
-                this.identity = value;
-            }
-        }
-
-        // add default values in
+        // table that insert issued for
+        Table table = obj.getTable().getMetadataObject();
         try {
-            for (Column column : getTable().getColumns()) {
-                if (column.getDefaultValue() != null && !this.payload.containsKey(column.getName())) {
-                    this.payload.put(column.getName(), DataTypeManager.getTransform(String.class, column.getJavaType())
-                            .transform(column.getDefaultValue(), column.getJavaType()));
+            // create the top table parent document, where insert is actually being done at
+            InfinispanDocument targetDocument = buildTargetDocument(table);
+
+            // build the payload object from insert
+            int elementCount = obj.getColumns().size();
+            for (int i = 0; i < elementCount; i++) {
+
+                ColumnReference columnReferce = obj.getColumns().get(i);
+                Column column = columnReferce.getMetadataObject();
+                this.projectedExpressions.add(columnReferce);
+
+                List<Expression> values = ((ExpressionValueSource)obj.getValueSource()).getValues();
+                Expression expr = values.get(i);
+                Object value = resolveExpressionValue(expr);
+
+                updateDocument(targetDocument, column, value);
+
+                if ((pkColumn != null && column.equals(pkColumn) || pkColumn.equals(normalizePseudoColumn(column)))) {
+                    this.identity = value;
                 }
             }
+
+            // add default values in for the table insert issued for
+            for (Column column : table.getColumns()) {
+                String attrName = MarshallerBuilder.getDocumentAttributeName(column, this.nested, this.metadata);
+                if (column.getDefaultValue() != null && !targetDocument.getProperties().containsKey(attrName)) {
+                    updateDocument(targetDocument, column, column.getDefaultValue());
+                }
+            }
+            this.insertPayload = targetDocument;
         } catch (NumberFormatException e) {
             this.exceptions.add(new TranslatorException(e));
-        } catch (TransformationException e) {
+        } catch (TranslatorException e) {
             this.exceptions.add(new TranslatorException(e));
         }
 
         if (this.identity == null) {
             this.exceptions.add(new TranslatorException(
-                    InfinispanPlugin.Util.gs(InfinispanPlugin.Event.TEIID25004, getTable().getName())));
+                    InfinispanPlugin.Util.gs(InfinispanPlugin.Event.TEIID25004, getTopLevelTable().getName())));
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private void updateDocument(InfinispanDocument targetDocument, Column column, Object value)
+            throws TranslatorException {
+        String attrName = MarshallerBuilder.getDocumentAttributeName(column, this.nested, this.metadata);
+        if (value instanceof List) {
+            List<Object> l = (List<Object>)value;
+            for(Object o : l) {
+                targetDocument.addArrayProperty(attrName, o);
+            }
+        } else {
+            targetDocument.addProperty(attrName, value);
+        }
+        this.updatePayload.put(attrName, value);
+    }
+
+    private InfinispanDocument buildTargetDocument(Table table) throws TranslatorException {
+        TreeMap<Integer, TableWireFormat> wireMap = MarshallerBuilder.getWireMap(getTopLevelTable(), metadata);
+        String messageName = ProtobufMetadataProcessor.getMessageName(table);
+        if (table.equals(getTopLevelTable())) {
+            return new InfinispanDocument(messageName, wireMap, null);
+        } else {
+            // now create the document at child node
+            int parentTag = ProtobufMetadataProcessor.getParentTag(table);
+            TableWireFormat twf = wireMap.get(TableWireFormat.buildNestedTag(parentTag));
+            this.nested = true;
+            return new InfinispanDocument(messageName, twf.getNestedWireMap(), null);
         }
     }
 
     public Column getPrimaryKey() {
         Column pkColumn = null;
-        if (getTable().getPrimaryKey() != null) {
-            pkColumn = getTable().getPrimaryKey().getColumns().get(0);
+        if (getTopLevelTable().getPrimaryKey() != null) {
+            pkColumn = getTopLevelTable().getPrimaryKey().getColumns().get(0);
         }
         return pkColumn;
     }
@@ -153,13 +205,24 @@ public class InfinispanUpdateVisitor extends IckleConvertionVisitor {
             append(obj.getWhere());
         }
 
+        // table that update issued for
+        Table table = obj.getTable().getMetadataObject();
+        if (!table.equals(getTopLevelTable())) {
+            this.nested = true;
+        }
+
         // read the properties
-        int elementCount = obj.getChanges().size();
-        for (int i = 0; i < elementCount; i++) {
-            Column column = obj.getChanges().get(i).getSymbol().getMetadataObject();
-            Expression expr = obj.getChanges().get(i).getValue();
-            Object value = resolveExpressionValue(expr);
-            this.payload.put(column.getName(), value);
+        try {
+            int elementCount = obj.getChanges().size();
+            for (int i = 0; i < elementCount; i++) {
+                Column column = obj.getChanges().get(i).getSymbol().getMetadataObject();
+                Expression expr = obj.getChanges().get(i).getValue();
+                Object value = resolveExpressionValue(expr);
+                String attrName = MarshallerBuilder.getDocumentAttributeName(column, this.nested, this.metadata);
+                this.updatePayload.put(attrName, value);
+            }
+        } catch (TranslatorException e) {
+            this.exceptions.add(e);
         }
     }
 
@@ -167,6 +230,13 @@ public class InfinispanUpdateVisitor extends IckleConvertionVisitor {
     public void visit(Delete obj) {
         this.operationType = OperationType.DELETE;
         append(obj.getTable());
+
+        // table that update issued for
+        Table table = obj.getTable().getMetadataObject();
+        if (!table.equals(getTopLevelTable())) {
+            this.nested = true;
+        }
+
         if (obj.getWhere() != null) {
             buffer.append(Tokens.SPACE).append(SQLConstants.Reserved.WHERE).append(Tokens.SPACE);
             append(obj.getWhere());

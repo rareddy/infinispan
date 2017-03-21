@@ -76,8 +76,12 @@ public class TableWireFormat {
 
     public TableWireFormat(String name, int parentTag) {
         this.writeTag = parentTag;
-        this.readTag = WireFormat.makeTag(parentTag, WireFormat.WIRETYPE_LENGTH_DELIMITED);
+        this.readTag = buildNestedTag(parentTag);
         this.attributeName = name;
+    }
+
+    public static int buildNestedTag(int tag) {
+        return WireFormat.makeTag(tag, WireFormat.WIRETYPE_LENGTH_DELIMITED);
     }
 
     private Type buildProbufType(String nativeType, Class<?> columnType) {

@@ -51,7 +51,7 @@ public class InfinispanExecutionFactory extends ExecutionFactory<ConnectionFacto
     public static final Version SIX_6 = Version.getVersion("6.6"); //$NON-NLS-1$
 	public static final int MAX_SET_SIZE = 1024;
 
-	private boolean supportsCompareCriteriaOrdered = false;
+	private boolean supportsCompareCriteriaOrdered = true;
 	private boolean supportsUpsert = true;
 	private ProtobufResource protobuf;
 
@@ -60,12 +60,11 @@ public class InfinispanExecutionFactory extends ExecutionFactory<ConnectionFacto
 		setMaxDependentInPredicates(MAX_SET_SIZE);
 		setSupportsOrderBy(true);
 		setSupportsSelectDistinct(false);
-		setSupportsInnerJoins(false);
-		setSupportsFullOuterJoins(false);
-		setSupportsOuterJoins(false);
+		setSupportsInnerJoins(true);
+		setSupportsFullOuterJoins(true);
+		setSupportsOuterJoins(true);
 		setSupportedJoinCriteria(SupportedJoinCriteria.KEY);
 		setTransactionSupport(TransactionSupport.NONE);
-		setSupportsDirectQueryProcedure(false);
 	}
 
     @Override
@@ -107,11 +106,6 @@ public class InfinispanExecutionFactory extends ExecutionFactory<ConnectionFacto
     @Override
     public MetadataProcessor<InfinispanConnection> getMetadataProcessor() {
         return new ProtobufMetadataProcessor();
-    }
-
-    @Override
-    public int getMaxFromGroups() {
-        return 1;
     }
 
     @Override

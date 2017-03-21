@@ -23,14 +23,12 @@ package org.teiid.translator.infinispan.hotrod;
 
 import java.util.List;
 import java.util.Map;
-import java.util.Map.Entry;
-import java.util.TreeMap;
-
 import org.infinispan.client.hotrod.RemoteCache;
 import org.infinispan.client.hotrod.Search;
 import org.infinispan.query.dsl.Query;
 import org.infinispan.query.dsl.QueryFactory;
 import org.teiid.infinispan.api.InfinispanConnection;
+import org.teiid.infinispan.api.InfinispanDocument;
 import org.teiid.infinispan.api.TeiidMarshallerContext;
 import org.teiid.language.Command;
 import org.teiid.metadata.RuntimeMetadata;
@@ -56,7 +54,6 @@ public class InfinispanUpdateExecution implements UpdateExecution {
         this.connection = connection;
     }
 
-    @SuppressWarnings("unchecked")
     @Override
     public void execute() throws TranslatorException {
 
@@ -68,9 +65,10 @@ public class InfinispanUpdateExecution implements UpdateExecution {
         }
 
         try {
-            Table table = visitor.getTable();
+            Table table = visitor.getTopLevelTable();
             TeiidMarshallerContext.setMarsheller(MarshallerBuilder.getMarshaller(table, this.metadata));
-            final String PK = table.getPrimaryKey().getColumns().get(0).getName();
+            final String PK = MarshallerBuilder.getDocumentAttributeName(table.getPrimaryKey().getColumns().get(0),
+                    false, this.metadata);
 
             // if the message in defined in different cache than the default, switch it out now.
             final RemoteCache<Object,Object> cache = InfinispanQueryExecution.getCache(table, connection);
@@ -79,46 +77,72 @@ public class InfinispanUpdateExecution implements UpdateExecution {
             if (visitor.getOperationType() == OperationType.DELETE) {
                 paginateResults(cache, visitor.getQuery(false), new Task() {
                     @Override
-                    public void run(List<Object> rows) {
-                        for (Object obj:rows) {
-                            if (cache.remove(((Object[])obj)[0]) != null) {
-                                updateCount++;
-                            }
+                    public void run(Object row) {
+                        if (visitor.isNestedOperation()) {
+                            // TODO: how to do nested filtering?? before the delete
+                        } else {
+                            Object key = ((Object[])row)[0];
+                            cache.remove(key);
+                            updateCount++;
                         }
                     }
                 }, this.executionContext.getBatchSize());
             } else if (visitor.getOperationType() == OperationType.UPDATE) {
                 paginateResults(cache, visitor.getQuery(true), new Task() {
                     @Override
-                    public void run(List<Object> rows) {
-                        for (Object obj:rows) {
-                            Map<String, Object> updated = mergeUpdatePayload(visitor.getProjectedColumnNames(),
-                                    (Object[]) obj, visitor.getPayload());
-                            cache.replace(updated.get(PK), updated);
+                    public void run(Object row) {
+                        if (visitor.isNestedOperation()) {
+                            // TODO: how to do nested filtering?? before the update
+                        } else {
+                            InfinispanDocument updated = mergeUpdatePayload(visitor.getProjectedColumnNames(),
+                                    (InfinispanDocument)row, visitor.getUpdatePayload());
+                            cache.replace(updated.getProperties().get(PK), updated);
                             updateCount++;
                         }
                     }
                 }, this.executionContext.getBatchSize());
             } else if (visitor.getOperationType() == OperationType.INSERT) {
-                // this is always single row; putIfAbsent is not working correctly.
-                Map<String, Object> previous = (Map<String, Object>) cache.get(visitor.getIdentity());
-                if (previous == null) {
-                    previous = (Map<String, Object>) cache.put(visitor.getIdentity(), visitor.getPayload());
-                    this.updateCount++;
+                InfinispanDocument previous = (InfinispanDocument)cache.get(visitor.getIdentity());
+                if (visitor.isNestedOperation()) {
+                    if (previous == null) {
+                        throw new TranslatorException(InfinispanPlugin.Util.gs(InfinispanPlugin.Event.TEIID25009,
+                                table.getName(), visitor.getIdentity()));
+                    }
+                    previous.addChildDocument(visitor.getInsertPayload().getName(), visitor.getInsertPayload());
                 } else {
-                    throw new TranslatorException(InfinispanPlugin.Util.gs(InfinispanPlugin.Event.TEIID25005,
-                            table.getName(), visitor.getIdentity()));
+                    // this is always single row; putIfAbsent is not working correctly.
+                    if (previous != null) {
+                        throw new TranslatorException(InfinispanPlugin.Util.gs(InfinispanPlugin.Event.TEIID25005,
+                                table.getName(), visitor.getIdentity()));
+                    }
+                    previous = visitor.getInsertPayload();
                 }
+                previous = (InfinispanDocument) cache.put(visitor.getIdentity(), previous);
+                this.updateCount++;
             } else if (visitor.getOperationType() == OperationType.UPSERT) {
+                boolean replace = false;
                 // this is always single row; putIfAbsent is not working correctly.
-                Map<String, Object> previous = (Map<String, Object>) cache.get(visitor.getIdentity());
-                if (previous == null) {
-                    previous = (Map<String, Object>) cache.put(visitor.getIdentity(), visitor.getPayload());
-                    this.updateCount++;
+                InfinispanDocument previous = (InfinispanDocument)cache.get(visitor.getIdentity());
+                if (visitor.isNestedOperation()) {
+                    if (previous == null) {
+                        throw new TranslatorException(InfinispanPlugin.Util.gs(InfinispanPlugin.Event.TEIID25009,
+                                table.getName(), visitor.getIdentity()));
+                    }
+                    previous.addChildDocument(visitor.getInsertPayload().getName(), visitor.getInsertPayload());
                 } else {
-                    cache.put(visitor.getIdentity(), mergePayload(previous, visitor.getPayload()));
-                    this.updateCount++;
+                    if (previous != null) {
+                        previous = mergeUpdatePayload(visitor.getProjectedColumnNames(), previous, visitor.getUpdatePayload());
+                        replace = true;
+                    } else {
+                        previous = visitor.getInsertPayload();
+                    }
                 }
+                if (replace) {
+                    previous = (InfinispanDocument) cache.replace(visitor.getIdentity(), previous);
+                } else {
+                    previous = (InfinispanDocument) cache.put(visitor.getIdentity(), previous);
+                }
+                this.updateCount++;
             }
         } finally {
             TeiidMarshallerContext.setMarsheller(null);
@@ -126,7 +150,7 @@ public class InfinispanUpdateExecution implements UpdateExecution {
     }
 
     interface Task {
-        void run(List<Object> rows);
+        void run(Object rows);
     }
 
     static void paginateResults(RemoteCache<Object,Object> cache, String queryStr, Task task, int batchSize) {
@@ -139,7 +163,9 @@ public class InfinispanUpdateExecution implements UpdateExecution {
         query.maxResults(batchSize);
         List<Object> values = query.list();
         while (true) {
-            task.run(values);
+            for(Object doc : values) {
+                task.run(doc);
+            }
             if (query.getResultSize() < batchSize) {
                 break;
             }
@@ -149,23 +175,16 @@ public class InfinispanUpdateExecution implements UpdateExecution {
         }
     }
 
-
-    private Object mergePayload(Map<String, Object> original, Map<String, Object> updates) {
-        for (Entry<String, Object> entry : updates.entrySet()) {
-            original.put(entry.getKey(), entry.getValue());
-        }
-        return original;
-    }
-
-    private Map<String, Object> mergeUpdatePayload(List<String> projected, Object[] row,
+    private InfinispanDocument mergeUpdatePayload(List<String> projected, InfinispanDocument previous,
             Map<String, Object> updates) {
-        Map<String, Object> updatedRow = new TreeMap<>();
         for (int i = 0; i < projected.size(); i++) {
             String column = projected.get(i);
             Object updatedValue = updates.get(column);
-            updatedRow.put(column, updatedValue != null ? updatedValue : row[i]);
+            if (updatedValue != null) {
+                previous.addProperty(column, updatedValue);
+            }
         }
-        return updatedRow;
+        return previous;
     }
 
     @Override

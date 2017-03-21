@@ -25,17 +25,11 @@ import static org.teiid.language.SQLConstants.Reserved.HAVING;
 
 import java.util.ArrayList;
 import java.util.List;
-import org.teiid.language.AggregateFunction;
-import org.teiid.language.ColumnReference;
-import org.teiid.language.DerivedColumn;
-import org.teiid.language.Expression;
-import org.teiid.language.Function;
+
+import org.teiid.language.*;
+import org.teiid.language.Comparison.Operator;
 import org.teiid.language.Join.JoinType;
-import org.teiid.language.Limit;
-import org.teiid.language.NamedTable;
-import org.teiid.language.SQLConstants;
 import org.teiid.language.SQLConstants.Tokens;
-import org.teiid.language.Select;
 import org.teiid.language.visitor.SQLStringVisitor;
 import org.teiid.metadata.Column;
 import org.teiid.metadata.KeyRecord;
@@ -64,51 +58,53 @@ public class IckleConvertionVisitor extends SQLStringVisitor {
         this.shortNameOnly = true;
     }
 
-    public Table getTable() {
+    public Table getTopLevelTable() {
         return namedTable.getMetadataObject();
+    }
+
+    public Table getWorkingTable() {
+        return this.originalNamedTable.getMetadataObject();
     }
 
     @Override
     public void visit(NamedTable obj) {
         this.originalNamedTable = obj;
 
-        if (this.includePK) {
-            KeyRecord pk = obj.getMetadataObject().getPrimaryKey();
-            if (pk != null) {
-                for (Column column : pk.getColumns()) {
-                    projectedExpressions.add(new ColumnReference(obj, column.getName(), column, column.getJavaType()));
-                }
-            }
-        }
-
-        String messageName = null;
-        String mergedTableName = ProtobufMetadataProcessor.getMerge(obj.getMetadataObject());
-        if (mergedTableName == null) {
-            messageName = getMessageName(obj.getMetadataObject());
-            this.namedTable = obj;
-            if (rootNode == null) {
+        if (this.rootNode == null) {
+            String messageName = null;
+            String mergedTableName = ProtobufMetadataProcessor.getMerge(obj.getMetadataObject());
+            if (mergedTableName == null) {
+                messageName = getMessageName(obj.getMetadataObject());
+                this.namedTable = obj;
                 this.rootNode = new InfinispanDocumentNode(obj.getMetadataObject(), true);
                 this.joinedNode = this.rootNode;
-            }
-        } else {
-            try {
-                Table mergedTable = this.metadata.getTable(mergedTableName);
-                messageName = getMessageName(mergedTable);
-                this.namedTable = new NamedTable(mergedTable.getName(), obj.getCorrelationName(), mergedTable);
-                if (rootNode == null) {
+            } else {
+                try {
+                    Table mergedTable = this.metadata.getTable(mergedTableName);
+                    messageName = getMessageName(mergedTable);
+                    this.namedTable = new NamedTable(mergedTable.getName(), obj.getCorrelationName(), mergedTable);
                     this.rootNode = new InfinispanDocumentNode(mergedTable, true);
                     this.joinedNode = this.rootNode.joinWith(JoinType.INNER_JOIN,
                             new InfinispanDocumentNode(obj.getMetadataObject(), true));
+                } catch (TranslatorException e) {
+                    this.exceptions.add(e);
                 }
-            } catch (TranslatorException e) {
-                this.exceptions.add(e);
             }
-        }
 
-        buffer.append(messageName);
-        if (obj.getCorrelationName() != null) {
-            buffer.append(Tokens.SPACE);
-            buffer.append(obj.getCorrelationName());
+            buffer.append(messageName);
+            if (obj.getCorrelationName() != null) {
+                buffer.append(Tokens.SPACE);
+                buffer.append(obj.getCorrelationName());
+            }
+
+            if (this.includePK) {
+                KeyRecord pk = this.namedTable.getMetadataObject().getPrimaryKey();
+                if (pk != null) {
+                    for (Column column : pk.getColumns()) {
+                        projectedExpressions.add(new ColumnReference(obj, column.getName(), column, column.getJavaType()));
+                    }
+                }
+            }
         }
     }
 
@@ -122,7 +118,7 @@ public class IckleConvertionVisitor extends SQLStringVisitor {
     }
 
     public boolean isPartOfPrimaryKey(String columnName) {
-        KeyRecord pk = getTable().getPrimaryKey();
+        KeyRecord pk = getTopLevelTable().getPrimaryKey();
         if (pk != null) {
             for (Column column:pk.getColumns()) {
                 if (column.getName().equals(columnName)) {
@@ -132,58 +128,33 @@ public class IckleConvertionVisitor extends SQLStringVisitor {
         }
         return false;
     }
-/*
+
     @Override
     public void visit(Join obj) {
-        // joins are not used currently
+        Condition cond = null;
         if (obj.getLeftItem() instanceof Join) {
-            Condition updated = obj.getCondition();
+            cond = obj.getCondition();
             append(obj.getLeftItem());
             Table right = ((NamedTable)obj.getRightItem()).getMetadataObject();
-            try {
-                updated = this.odataQuery.addNavigation(obj.getCondition(), obj.getJoinType(), right);
-                obj.setCondition(updated);
-                if (updated != null) {
-                    this.conditionFragments.add(obj.getCondition());
-                }
-            } catch (TranslatorException e) {
-                this.exceptions.add(e);
-            }
+            this.joinedNode.joinWith(obj.getJoinType(), new InfinispanDocumentNode(right, true));
         }
         else if (obj.getRightItem() instanceof Join) {
-            Condition updated = obj.getCondition();
+            cond = obj.getCondition();
             append(obj.getRightItem());
             Table left = ((NamedTable)obj.getLeftItem()).getMetadataObject();
-            try {
-                updated = this.odataQuery.addNavigation(obj.getCondition(), obj.getJoinType(), left);
-                obj.setCondition(updated);
-                if (updated != null) {
-                    this.conditionFragments.add(obj.getCondition());
-                }
-            } catch (TranslatorException e) {
-                this.exceptions.add(e);
-            }
+            this.joinedNode.joinWith(obj.getJoinType(), new InfinispanDocumentNode(left, true));
         }
         else {
-            Condition updated = obj.getCondition();
-            Table left = ((NamedTable)obj.getLeftItem()).getMetadataObject();
+            cond = obj.getCondition();
+            append(obj.getLeftItem());
             Table right = ((NamedTable)obj.getRightItem()).getMetadataObject();
-            try {
-                if (ODataMetadataProcessor.isComplexType(left) ||
-                        ODataMetadataProcessor.isNavigationType(left)) {
-                    throw new TranslatorException(ODataPlugin.Util.gs(ODataPlugin.Event.TEIID17027, left.getName()));
-                }
-                updated = this.odataQuery.addNavigation(obj.getCondition(), obj.getJoinType(), left, right);
-                obj.setCondition(updated);
-                if (updated != null) {
-                    this.conditionFragments.add(obj.getCondition());
-                }
-            } catch (TranslatorException e) {
-                this.exceptions.add(e);
-            }
+            this.joinedNode.joinWith(obj.getJoinType(), new InfinispanDocumentNode(right, true));
+        }
+
+        if (cond != null) {
+            append(cond);
         }
     }
-*/
 
     @Override
     public void visit(Limit obj) {
@@ -230,6 +201,20 @@ public class IckleConvertionVisitor extends SQLStringVisitor {
         }
 
         visitNodes(obj.getDerivedColumns());
+    }
+
+    @Override
+    public void visit(Comparison obj) {
+        if (obj.getOperator() == Operator.EQ && obj.getLeftExpression() instanceof ColumnReference
+                && obj.getRightExpression() instanceof ColumnReference) {
+            // this typically is join.
+            Column left = ((ColumnReference)obj.getLeftExpression()).getMetadataObject();
+            Column right = ((ColumnReference)obj.getRightExpression()).getMetadataObject();
+            if (getQualifiedName(left).equals(getQualifiedName(right))) {
+                return;
+            }
+        }
+        super.visit(obj);
     }
 
     @Override
@@ -325,7 +310,7 @@ public class IckleConvertionVisitor extends SQLStringVisitor {
 
         if (selectAllColumns) {
             boolean first = true;
-            for (Column column : getTable().getColumns()) {
+            for (Column column : getTopLevelTable().getColumns()) {
                 if (column.isSelectable()) {
                     String nis = getQualifiedName(column);
                     if (!first) {

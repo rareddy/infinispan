@@ -78,9 +78,10 @@ public class MarshallerBuilder {
                 TableWireFormat child = new TableWireFormat(name, tag, column);
 
                 String parentName = ProtobufMetadataProcessor.getMessageName(column);
-                TableWireFormat parent = new TableWireFormat(parentName, parentTag);
-                TableWireFormat existing = wireMap.get(parent.getReadTag());
+                TableWireFormat parent = null;
+                TableWireFormat existing = wireMap.get(TableWireFormat.buildNestedTag(parentTag));
                 if (existing == null) {
+                    parent = new TableWireFormat(parentName, parentTag);
                     wireMap.put(parent.getReadTag(), parent);
                 } else {
                     parent = existing;

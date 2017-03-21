@@ -95,7 +95,7 @@ public class TeiidSerializationContext implements SerializationContext {
     public <T> BaseMarshaller<T> getMarshaller(String fullName) {
         TeiidMarsheller.Marsheller m = TeiidMarshallerContext.getMarsheller();
         if (m != null && m.getTypeName().equals(fullName)) {
-            // TODO: not sure if this is called
+            // not sure if this is called
             return null;
         }
         return delegate.getMarshaller(fullName);
@@ -103,6 +103,9 @@ public class TeiidSerializationContext implements SerializationContext {
 
     @Override
     public <T> BaseMarshaller<T> getMarshaller(Class<T> clazz) {
+        if (clazz.isAssignableFrom(InfinispanDocument.class) && TeiidMarshallerContext.getMarsheller() != null) {
+            return null;
+        }
         return delegate.getMarshaller(clazz);
     }
 
@@ -113,6 +116,10 @@ public class TeiidSerializationContext implements SerializationContext {
 
     @Override
     public Integer getTypeIdByName(String fullName) {
+        TeiidMarsheller.Marsheller m = TeiidMarshallerContext.getMarsheller();
+        if (m != null && fullName.equals(m.getTypeName())) {
+            return null;
+        }
         return delegate.getTypeIdByName(fullName);
     }
 

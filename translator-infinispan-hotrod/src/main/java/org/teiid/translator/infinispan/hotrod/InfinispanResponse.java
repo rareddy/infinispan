@@ -97,7 +97,9 @@ public class InfinispanResponse {
             }
             this.currentDocumentRows = this.documentNode.tuples((InfinispanDocument)row);
         } else {
-            if (!lastBatch) {
+            if (lastBatch) {
+                return null;
+            } else {
                 fetchNextBatch();
                 Object row = this.responseIter.next();
                 if (row instanceof Object[]) {
@@ -106,11 +108,7 @@ public class InfinispanResponse {
                 this.currentDocumentRows = this.documentNode.tuples((InfinispanDocument)row);
             }
         }
-
-        if (this.currentDocumentRows != null && !this.currentDocumentRows.isEmpty()) {
-            return buildRow(this.currentDocumentRows.remove(0));
-        }
-        return null;
+        return getNextRow();
     }
 
     private List<Object> buildRow(Map<String, Object> row) {

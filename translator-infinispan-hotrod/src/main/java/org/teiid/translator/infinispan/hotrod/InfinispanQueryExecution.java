@@ -61,7 +61,7 @@ public class InfinispanQueryExecution implements ResultSetExecution {
         try {
             IckleConvertionVisitor visitor = new IckleConvertionVisitor(metadata, false);
             visitor.append(this.command);
-            Table table = visitor.getTable();
+            Table table = visitor.getTopLevelTable();
             this.marshaller = MarshallerBuilder.getMarshaller(table, this.metadata);
             TeiidMarshallerContext.setMarsheller(this.marshaller);
             String queryStr = visitor.getQuery(false);

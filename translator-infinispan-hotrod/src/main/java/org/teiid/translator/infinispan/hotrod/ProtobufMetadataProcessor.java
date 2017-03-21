@@ -4,7 +4,6 @@ package org.teiid.translator.infinispan.hotrod;
 import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.HashSet;
 import java.util.LinkedList;
 import java.util.List;
@@ -225,6 +224,7 @@ public class ProtobufMetadataProcessor implements MetadataProcessor<InfinispanCo
                     addedColumn.setNameInSource(parentColumn.getName());
                     addedColumn.setSelectable(false);
                     addedColumn.setProperty(PSEUDO, columnName);
+                    addedColumn.setSearchType(SearchType.Searchable);
                     List<String> keyColumns = new ArrayList<String>();
                     keyColumns.add(addedColumn.getName());
                     List<String> refColumns = new ArrayList<String>();
@@ -233,7 +233,6 @@ public class ProtobufMetadataProcessor implements MetadataProcessor<InfinispanCo
 
                     // since this nested table can not be reached directly, put a access
                     // pattern on it.
-                    mf.addAccessPattern("AP_"+addedColumn.getName().toUpperCase(), Arrays.asList(addedColumn.getName()), nestedTable);
                     nestedTable.setProperty(MERGE, table.getFullName());
                     nestedTable.setProperty(PARENT_TAG, Integer.toString(fieldElement.tag()));
                     nestedTable.setProperty(PARENT_COLUMN_NAME, columnName);
@@ -283,11 +282,17 @@ public class ProtobufMetadataProcessor implements MetadataProcessor<InfinispanCo
         }
 
         // process annotations
+        if (table.getAnnotation() != null) {
+            if (table.getAnnotation().contains("@Indexed")) {
+                c.setSearchType(SearchType.Searchable);
+            }
+        }
+
         if ( annotation != null && !annotation.isEmpty()) {
             c.setAnnotation(annotation);
 
-            if(annotation.contains("@IndexedField")) {
-                c.setSearchType(SearchType.Searchable);
+            if(annotation.contains("@IndexedField(index=false")) {
+                c.setSearchType(null);
             }
 
             if(annotation.contains("@Id")) {
@@ -296,6 +301,7 @@ public class ProtobufMetadataProcessor implements MetadataProcessor<InfinispanCo
                 mf.addPrimaryKey("PK_"+fieldElement.name().toUpperCase(), pkNames, table);
             }
         }
+
         return c;
     }
 

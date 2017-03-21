@@ -40,6 +40,7 @@ public class InfinispanPlugin {
 		TEIID25005,
 		TEIID25006,
 		TEIID25007,
-		TEIID25008
+		TEIID25008,
+		TEIID25009
 	}
 }

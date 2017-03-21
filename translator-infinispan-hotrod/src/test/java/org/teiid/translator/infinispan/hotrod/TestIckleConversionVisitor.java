@@ -21,7 +21,7 @@
  */
 package org.teiid.translator.infinispan.hotrod;
 
-import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.*;
 
 import org.junit.Test;
 import org.teiid.cdk.api.TranslationUtility;
@@ -35,14 +35,14 @@ import org.teiid.query.metadata.TransformationMetadata;
 
 public class TestIckleConversionVisitor {
 
-    private void helpExecute(String query, String expected) throws Exception {
+    private IckleConvertionVisitor helpExecute(String query, String expected) throws Exception {
         MetadataFactory mf = TestProtobufMetadataProcessor.protoMatadata("tables.proto");
         String ddl = DDLStringVisitor.getDDLString(mf.getSchema(), null, null);
         System.out.println(ddl);
-        helpExecute(mf, query, expected);
+        return helpExecute(mf, query, expected);
     }
 
-    private void helpExecute(MetadataFactory mf, String query, String expected) throws Exception {
+    private IckleConvertionVisitor helpExecute(MetadataFactory mf, String query, String expected) throws Exception {
         InfinispanExecutionFactory ef = new InfinispanExecutionFactory();
         TransformationMetadata metadata = TestProtobufMetadataProcessor.getTransformationMetadata(mf, ef);
         TranslationUtility utility = new TranslationUtility(metadata);
@@ -51,6 +51,7 @@ public class TestIckleConversionVisitor {
         visitor.visitNode(cmd);
         String actual = visitor.getQuery(false);
         assertEquals(expected, actual);
+        return visitor;
     }
 
     private void helpUpdate(String query, String expected) throws Exception {
@@ -150,6 +151,20 @@ public class TestIckleConversionVisitor {
         helpExecute("select * from model.G4", "FROM pm1.G2");
         helpExecute("select * from model.G4 as p", "FROM pm1.G2 p");
         helpExecute("select * from model.G4 where G2_e1 = 2", "FROM pm1.G2 WHERE e1 = 2");
-        helpExecute("select * from model.G4 as p where p.G2_e1 = 2", "FROM pm1.G2 p WHERE p.e1 = 2");
+        IckleConvertionVisitor visitor = helpExecute("select * from model.G4 as p where p.G2_e1 = 2",
+                "FROM pm1.G2 p WHERE p.e1 = 2");
+        assertArrayEquals(new String[] { "pm1.G2/pm1.G4/e1", "pm1.G2/pm1.G4/e2" },
+                visitor.getProjectedDocumentAttributes().toArray(new String[2]));
+    }
+
+    @Test
+    public void testJoins() throws Exception {
+        helpExecute("select g2.e1, g4.e1 from model.G2 g2 JOIN model.G4 g4 ON g2.e1 = g4.g2_e1",
+                "FROM pm1.G2 g2"); // where is not generated because both columns as one and same
+
+        helpExecute("select g2.e1, g4.e1 from model.G2 g2 JOIN model.G4 g4 ON g2.e1 = g4.g2_e1 "
+                + "WHERE g2.e2 = 'foo' AND g4.e2 = 'bar'",
+                "FROM pm1.G2 g2 WHERE g2.e2 = 'foo' AND g2.g4.e2 = 'bar'");
+
     }
 }
