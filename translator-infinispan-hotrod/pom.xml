@@ -29,18 +29,24 @@
 			<groupId>org.jboss.spec.javax.resource</groupId>
 			<artifactId>jboss-connector-api_1.7_spec</artifactId>
 		</dependency>
-        <dependency>
-            <groupId>org.jboss.teiid.connectors</groupId>
-            <artifactId>infinispan-api</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>org.infinispan</groupId>
-            <artifactId>infinispan-remote</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>org.jboss.teiid.connectors</groupId>
-            <artifactId>document-api</artifactId>
-        </dependency>          
+		<dependency>
+			<groupId>org.jboss.teiid.connectors</groupId>
+			<artifactId>infinispan-api</artifactId>
+		</dependency>
+		<dependency>
+			<groupId>org.infinispan</groupId>
+			<artifactId>infinispan-remote</artifactId>
+		</dependency>
+		<dependency>
+			<groupId>org.jboss.teiid.connectors</groupId>
+			<artifactId>document-api</artifactId>
+		</dependency>
+		<dependency>
+			<groupId>org.jboss.teiid.connectors</groupId>
+			<artifactId>connector-infinispan-hotrod</artifactId>
+			<type>test-jar</type>
+			<scope>test</scope>
+		</dependency>
 	</dependencies>
 
 	<build>

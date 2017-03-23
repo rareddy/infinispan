@@ -49,7 +49,7 @@ public class TestIckleConversionVisitor {
         Select cmd = (Select)utility.parseCommand(query);
         IckleConvertionVisitor visitor = new IckleConvertionVisitor(new RuntimeMetadataImpl(metadata), false);
         visitor.visitNode(cmd);
-        String actual = visitor.getQuery(false);
+        String actual = visitor.getQuery();
         assertEquals(expected, actual);
         return visitor;
     }
@@ -67,7 +67,12 @@ public class TestIckleConversionVisitor {
         Command cmd = utility.parseCommand(query);
         InfinispanUpdateVisitor visitor = new InfinispanUpdateVisitor(new RuntimeMetadataImpl(metadata));
         visitor.append(cmd);
-        String actual = visitor.getQuery(cmd instanceof Update);
+        String actual = null;
+        if (cmd instanceof Update) {
+            actual = visitor.getUpdateQuery();
+        } else {
+            actual = visitor.getDeleteQuery();
+        }
         assertEquals(expected, actual);
     }
 
@@ -123,13 +128,13 @@ public class TestIckleConversionVisitor {
     @Test
     public void testUpdate() throws Exception {
         helpUpdate("update G1 set e2='bar' where e1 = 1 and e2 = 'foo'",
-                "SELECT e1, e2, e3, e4, e5 FROM pm1.G1 WHERE e1 = 1 AND e2 = 'foo'");
+                "FROM pm1.G1 __t WHERE __t.e1 = 1 AND __t.e2 = 'foo'");
     }
 
     @Test
     public void testDelete() throws Exception {
         helpUpdate("delete from G1 where e1 > 1 or e2 = 'foo'",
-                "SELECT e1 FROM pm1.G1 WHERE e1 > 1 OR e2 = 'foo'");
+                "SELECT __t.e1 FROM pm1.G1 __t WHERE __t.e1 > 1 OR __t.e2 = 'foo'");
     }
 
     @Test

@@ -47,7 +47,7 @@ public class IckleConvertionVisitor extends SQLStringVisitor {
     private Integer rowLimit;
     private Integer rowOffset;
     private boolean includePK;
-    private boolean avoidProjection = false;
+    protected boolean avoidProjection = false;
     private InfinispanDocumentNode rootNode;
     private DocumentNode joinedNode;
     private List<String> projectedDocumentAttributes = new ArrayList<>();
@@ -279,10 +279,10 @@ public class IckleConvertionVisitor extends SQLStringVisitor {
         return column;
     }
 
-    public String getQuery(boolean selectAllColumns) {
+    public String getQuery() {
         StringBuilder sb = new StringBuilder();
         if (!this.avoidProjection) {
-            addSelectedColumns(selectAllColumns, sb);
+            addSelectedColumns(sb);
             sb.append(Tokens.SPACE);
         }
         sb.append(super.toString());
@@ -305,24 +305,8 @@ public class IckleConvertionVisitor extends SQLStringVisitor {
         return nis;
     }
 
-    StringBuilder addSelectedColumns(boolean selectAllColumns, StringBuilder sb) {
+    StringBuilder addSelectedColumns(StringBuilder sb) {
         sb.append(SQLConstants.Reserved.SELECT).append(Tokens.SPACE);
-
-        if (selectAllColumns) {
-            boolean first = true;
-            for (Column column : getTopLevelTable().getColumns()) {
-                if (column.isSelectable()) {
-                    String nis = getQualifiedName(column);
-                    if (!first) {
-                        sb.append(Tokens.COMMA).append(Tokens.SPACE);
-                    }
-                    sb.append(nis);
-                    first = false;
-                }
-            }
-            return sb;
-        }
-
 
         boolean first = true;
         for (Expression expr : this.projectedExpressions) {

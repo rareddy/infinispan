@@ -29,15 +29,7 @@ import java.util.TreeMap;
 
 import org.teiid.infinispan.api.InfinispanDocument;
 import org.teiid.infinispan.api.TableWireFormat;
-import org.teiid.language.ColumnReference;
-import org.teiid.language.Delete;
-import org.teiid.language.Expression;
-import org.teiid.language.ExpressionValueSource;
-import org.teiid.language.Function;
-import org.teiid.language.Insert;
-import org.teiid.language.Literal;
-import org.teiid.language.SQLConstants;
-import org.teiid.language.Update;
+import org.teiid.language.*;
 import org.teiid.language.SQLConstants.Tokens;
 import org.teiid.metadata.Column;
 import org.teiid.metadata.RuntimeMetadata;
@@ -227,6 +219,14 @@ public class InfinispanUpdateVisitor extends IckleConvertionVisitor {
     }
 
     @Override
+    public void visit(NamedTable obj) {
+        if (obj.getCorrelationName() == null) {
+            obj.setCorrelationName("__t");
+        }
+        super.visit(obj);
+    }
+
+    @Override
     public void visit(Delete obj) {
         this.operationType = OperationType.DELETE;
         append(obj.getTable());
@@ -255,10 +255,16 @@ public class InfinispanUpdateVisitor extends IckleConvertionVisitor {
         return names;
     }
 
-    @Override
-    public String getQuery(boolean selectAllColumns) {
+    public String getUpdateQuery() {
         StringBuilder sb = new StringBuilder();
-        addSelectedColumns(selectAllColumns, sb);
+        sb.append(SQLConstants.Reserved.FROM);
+        sb.append(Tokens.SPACE).append(super.toString());
+        return  sb.toString();
+    }
+
+    public String getDeleteQuery() {
+        StringBuilder sb = new StringBuilder();
+        addSelectedColumns(sb);
         sb.append(Tokens.SPACE).append(SQLConstants.Reserved.FROM);
         sb.append(Tokens.SPACE).append(super.toString());
         return  sb.toString();

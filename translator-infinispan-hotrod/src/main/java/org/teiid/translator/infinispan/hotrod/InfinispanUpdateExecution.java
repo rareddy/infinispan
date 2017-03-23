@@ -23,6 +23,8 @@ package org.teiid.translator.infinispan.hotrod;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Map.Entry;
+
 import org.infinispan.client.hotrod.RemoteCache;
 import org.infinispan.client.hotrod.Search;
 import org.infinispan.query.dsl.Query;
@@ -75,11 +77,12 @@ public class InfinispanUpdateExecution implements UpdateExecution {
 
 
             if (visitor.getOperationType() == OperationType.DELETE) {
-                paginateResults(cache, visitor.getQuery(false), new Task() {
+                paginateResults(cache, visitor.getDeleteQuery(), new Task() {
                     @Override
-                    public void run(Object row) {
+                    public void run(Object row) throws TranslatorException {
                         if (visitor.isNestedOperation()) {
                             // TODO: how to do nested filtering?? before the delete
+                            throw new TranslatorException(InfinispanPlugin.Util.gs(InfinispanPlugin.Event.TEIID25010));
                         } else {
                             Object key = ((Object[])row)[0];
                             cache.remove(key);
@@ -88,14 +91,15 @@ public class InfinispanUpdateExecution implements UpdateExecution {
                     }
                 }, this.executionContext.getBatchSize());
             } else if (visitor.getOperationType() == OperationType.UPDATE) {
-                paginateResults(cache, visitor.getQuery(true), new Task() {
+                paginateResults(cache, visitor.getUpdateQuery(), new Task() {
                     @Override
-                    public void run(Object row) {
+                    public void run(Object row) throws TranslatorException {
                         if (visitor.isNestedOperation()) {
                             // TODO: how to do nested filtering?? before the update
+                            throw new TranslatorException(InfinispanPlugin.Util.gs(InfinispanPlugin.Event.TEIID25010));
                         } else {
-                            InfinispanDocument updated = mergeUpdatePayload(visitor.getProjectedColumnNames(),
-                                    (InfinispanDocument)row, visitor.getUpdatePayload());
+                            InfinispanDocument updated = mergeUpdatePayload((InfinispanDocument) row,
+                                    visitor.getUpdatePayload());
                             cache.replace(updated.getProperties().get(PK), updated);
                             updateCount++;
                         }
@@ -131,7 +135,7 @@ public class InfinispanUpdateExecution implements UpdateExecution {
                     previous.addChildDocument(visitor.getInsertPayload().getName(), visitor.getInsertPayload());
                 } else {
                     if (previous != null) {
-                        previous = mergeUpdatePayload(visitor.getProjectedColumnNames(), previous, visitor.getUpdatePayload());
+                        previous = mergeUpdatePayload(previous, visitor.getUpdatePayload());
                         replace = true;
                     } else {
                         previous = visitor.getInsertPayload();
@@ -150,10 +154,11 @@ public class InfinispanUpdateExecution implements UpdateExecution {
     }
 
     interface Task {
-        void run(Object rows);
+        void run(Object rows) throws TranslatorException;
     }
 
-    static void paginateResults(RemoteCache<Object,Object> cache, String queryStr, Task task, int batchSize) {
+    static void paginateResults(RemoteCache<Object, Object> cache, String queryStr, Task task, int batchSize)
+            throws TranslatorException {
 
         QueryFactory qf = Search.getQueryFactory(cache);
         Query query = qf.create(queryStr);
@@ -175,14 +180,10 @@ public class InfinispanUpdateExecution implements UpdateExecution {
         }
     }
 
-    private InfinispanDocument mergeUpdatePayload(List<String> projected, InfinispanDocument previous,
+    private InfinispanDocument mergeUpdatePayload(InfinispanDocument previous,
             Map<String, Object> updates) {
-        for (int i = 0; i < projected.size(); i++) {
-            String column = projected.get(i);
-            Object updatedValue = updates.get(column);
-            if (updatedValue != null) {
-                previous.addProperty(column, updatedValue);
-            }
+        for (Entry<String, Object> entry:updates.entrySet()) {
+            previous.addProperty(entry.getKey(), entry.getValue());
         }
         return previous;
     }

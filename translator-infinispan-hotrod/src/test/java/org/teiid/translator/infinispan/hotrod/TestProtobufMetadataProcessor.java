@@ -24,10 +24,13 @@ package org.teiid.translator.infinispan.hotrod;
 import static org.junit.Assert.assertEquals;
 
 import java.util.Properties;
+import java.util.TreeMap;
 
 import org.junit.Test;
 import org.teiid.core.util.ObjectConverterUtil;
 import org.teiid.core.util.UnitTestUtil;
+import org.teiid.dqp.internal.datamgr.RuntimeMetadataImpl;
+import org.teiid.infinispan.api.TableWireFormat;
 import org.teiid.metadata.MetadataFactory;
 import org.teiid.query.function.FunctionTree;
 import org.teiid.query.function.UDFSource;
@@ -68,7 +71,7 @@ public class TestProtobufMetadataProcessor {
     public void testMetadataProcessor() throws Exception {
         MetadataFactory mf = protoMatadata("tables.proto");
         String ddl = DDLStringVisitor.getDDLString(mf.getSchema(), null, null);
-        System.out.println(ddl);
+        //System.out.println(ddl);
         //ObjectConverterUtil.write(new StringReader(ddl), UnitTestUtil.getTestDataFile("tables.ddl"));
         assertEquals(ObjectConverterUtil.convertFileToString(UnitTestUtil.getTestDataFile("tables.ddl")), ddl);
     }
@@ -77,8 +80,30 @@ public class TestProtobufMetadataProcessor {
     public void testMetadataProcessorAddressbook() throws Exception {
         MetadataFactory mf = protoMatadata("addressbook.proto");
         String ddl = DDLStringVisitor.getDDLString(mf.getSchema(), null, null);
-        System.out.println(ddl);
+        //System.out.println(ddl);
         //ObjectConverterUtil.write(new StringReader(ddl), UnitTestUtil.getTestDataFile("tables.ddl"));
         //assertEquals(ObjectConverterUtil.convertFileToString(UnitTestUtil.getTestDataFile("tables.ddl")), ddl);
+    }
+
+    @Test
+    public void testTableWireFormat() throws Exception {
+        MetadataFactory mf = protoMatadata("tables.proto");
+        InfinispanExecutionFactory ef = new InfinispanExecutionFactory();
+        TransformationMetadata metadata = getTransformationMetadata(mf, ef);
+
+        TreeMap<Integer, TableWireFormat> map = MarshallerBuilder.getWireMap(mf.getSchema().getTable("G2"),
+                new RuntimeMetadataImpl(metadata));
+        String expected = "{8=TableWireFormat [expectedTag=8, attributeName=e1, nested=null], "
+                + "18=TableWireFormat [expectedTag=18, attributeName=e2, nested=null], "
+                + "42=TableWireFormat [expectedTag=42, attributeName=pm1.G3, nested={"
+                    + "8=TableWireFormat [expectedTag=8, attributeName=pm1.G2/pm1.G3/e1, nested=null], "
+                    + "18=TableWireFormat [expectedTag=18, attributeName=pm1.G2/pm1.G3/e2, nested=null]}], "
+                + "50=TableWireFormat [expectedTag=50, attributeName=pm1.G4, nested={"
+                    + "8=TableWireFormat [expectedTag=8, attributeName=pm1.G2/pm1.G4/e1, nested=null], "
+                    + "18=TableWireFormat [expectedTag=18, attributeName=pm1.G2/pm1.G4/e2, nested=null]}], "
+                    + "58=TableWireFormat [expectedTag=58, attributeName=e5, nested=null], "
+                + "65=TableWireFormat [expectedTag=65, attributeName=e6, nested=null]}";
+
+        assertEquals(expected, map.toString());
     }
 }

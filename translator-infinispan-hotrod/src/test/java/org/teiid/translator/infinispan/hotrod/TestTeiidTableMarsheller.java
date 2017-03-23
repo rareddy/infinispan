@@ -79,7 +79,7 @@ public class TestTeiidTableMarsheller {
         RuntimeMetadata runtimeMetadata = new RuntimeMetadataImpl(metadata);
         IckleConvertionVisitor visitor = new IckleConvertionVisitor(runtimeMetadata, false);
         visitor.visitNode(cmd);
-        visitor.getQuery(false);
+        visitor.getQuery();
         return visitor;
     }
 

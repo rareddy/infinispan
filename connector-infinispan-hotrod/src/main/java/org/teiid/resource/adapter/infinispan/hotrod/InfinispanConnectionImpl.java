@@ -82,7 +82,7 @@ public class InfinispanConnectionImpl extends BasicConnection implements Infinis
     @Override
     public void close() throws ResourceException {
         // do not want to close on per cache basis
-        // TODO: what neds to be done here?
+        // TODO: what needs to be done here?
     }
 
     @Override

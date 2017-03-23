@@ -223,6 +223,7 @@ public class ProtobufMetadataProcessor implements MetadataProcessor<InfinispanCo
                     Column addedColumn = mf.addColumn(psedoColumnName, parentColumn.getRuntimeType(), nestedTable);
                     addedColumn.setNameInSource(parentColumn.getName());
                     addedColumn.setSelectable(false);
+                    addedColumn.setUpdatable(true);
                     addedColumn.setProperty(PSEUDO, columnName);
                     addedColumn.setSearchType(SearchType.Searchable);
                     List<String> keyColumns = new ArrayList<String>();

@@ -64,7 +64,7 @@ public class InfinispanQueryExecution implements ResultSetExecution {
             Table table = visitor.getTopLevelTable();
             this.marshaller = MarshallerBuilder.getMarshaller(table, this.metadata);
             TeiidMarshallerContext.setMarsheller(this.marshaller);
-            String queryStr = visitor.getQuery(false);
+            String queryStr = visitor.getQuery();
             LogManager.logDetail(LogConstants.CTX_CONNECTOR, "SourceQuery:", queryStr);
 
             // if the message in defined in different cache than the default, switch it out now.

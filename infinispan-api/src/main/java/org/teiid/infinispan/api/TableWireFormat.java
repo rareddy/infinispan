@@ -129,6 +129,7 @@ public class TableWireFormat {
 
     @Override
     public String toString() {
-        return "TableWireFormat [expectedTag=" + readTag + ", column=" + column + ", nested=" + nested + "]";
+        return "TableWireFormat [expectedTag=" + readTag + ", attributeName=" + attributeName
+                + ", nested=" + nested + "]";
     }
 }
