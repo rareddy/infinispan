@@ -22,6 +22,7 @@
 
 package org.teiid.translator.infinispan.hotrod;
 
+import java.util.ArrayList;
 import java.util.List;
 
 import javax.resource.cci.ConnectionFactory;
@@ -34,6 +35,8 @@ import org.teiid.language.Command;
 import org.teiid.language.QueryExpression;
 import org.teiid.metadata.MetadataFactory;
 import org.teiid.metadata.RuntimeMetadata;
+import org.teiid.metadata.Schema;
+import org.teiid.metadata.Table;
 import org.teiid.translator.ExecutionContext;
 import org.teiid.translator.ExecutionFactory;
 import org.teiid.translator.MetadataProcessor;
@@ -53,7 +56,6 @@ public class InfinispanExecutionFactory extends ExecutionFactory<ConnectionFacto
 
 	private boolean supportsCompareCriteriaOrdered = true;
 	private boolean supportsUpsert = true;
-	private ProtobufResource protobuf;
 
 	public InfinispanExecutionFactory() {
 		setMaxInCriteriaSize(MAX_SET_SIZE);
@@ -76,7 +78,6 @@ public class InfinispanExecutionFactory extends ExecutionFactory<ConnectionFacto
     public ResultSetExecution createResultSetExecution(QueryExpression command,
             ExecutionContext executionContext, RuntimeMetadata metadata,
             InfinispanConnection connection) throws TranslatorException {
-        connection.registerProtobufFile(this.protobuf);
         return new InfinispanQueryExecution(this, command, executionContext, metadata, connection);
     }
 
@@ -99,8 +100,37 @@ public class InfinispanExecutionFactory extends ExecutionFactory<ConnectionFacto
     public void getMetadata(MetadataFactory metadataFactory, InfinispanConnection conn) throws TranslatorException {
         ProtobufMetadataProcessor metadataProcessor = (ProtobufMetadataProcessor)getMetadataProcessor();
         PropertiesUtils.setBeanProperties(metadataProcessor, metadataFactory.getModelProperties(), "importer"); //$NON-NLS-1$
+
+        // tables are provided through other metadata repositories
+        Schema schema = metadataFactory.getSchema();
+        ProtobufResource resource = null;
+        if (schema.getTables() != null && !schema.getTables().isEmpty()) {
+            SchemaToProtobufProcessor stpp = new SchemaToProtobufProcessor();
+            stpp.setIndexMessages(true);
+            resource = stpp.process(metadataFactory, conn);
+            metadataProcessor.setProtobufResource(resource);
+            ArrayList<Table> tables = new ArrayList<>(schema.getTables().values());
+            for (Table t : tables) {
+                // remove the previous tables, as we want to introduce them with necessary
+                // extension metadata generated with generated .proto file. As some of the default
+                // extension metadata can be added.
+                schema.removeTable(t.getName());
+            }
+        }
+
         metadataProcessor.process(metadataFactory, conn);
-        this.protobuf = metadataProcessor.getProtobufResource();
+
+        if (metadataProcessor.isRegisterProtobuf()) {
+            resource = metadataProcessor.getProtobufResource();
+            if(resource == null) {
+                SchemaToProtobufProcessor stpp = new SchemaToProtobufProcessor();
+                resource = stpp.process(metadataFactory, conn);
+            }
+            // register protobuf
+            if (resource != null) {
+                conn.registerProtobufFile(resource);
+            }
+        }
     }
 
     @Override

@@ -57,7 +57,7 @@ public class InfinispanConnectionImpl extends BasicConnection implements Infinis
     @Override
     public void registerProtobufFile(ProtobufResource protobuf) throws TranslatorException {
         try {
-            if (protobuf != null && !registered.get(protobuf.getIdentifier())) {
+            if (protobuf != null && registered.get(protobuf.getIdentifier()) == null) {
                 RemoteCache<String, String> metadataCache = manager
                         .getCache(ProtobufMetadataManagerConstants.PROTOBUF_METADATA_CACHE_NAME);
                 if (metadataCache.get(protobuf.getIdentifier()) == null) {
@@ -66,8 +66,9 @@ public class InfinispanConnectionImpl extends BasicConnection implements Infinis
                     if (errors != null) {
                        throw new TranslatorException(InfinispanManagedConnectionFactory.UTIL.getString("proto_error", errors));
                     }
+                    registered.put(protobuf.getIdentifier(), Boolean.TRUE);
                 }
-                registered.put(protobuf.getIdentifier(), Boolean.TRUE);
+
             }
         } catch(Throwable t) {
             throw new TranslatorException(t);

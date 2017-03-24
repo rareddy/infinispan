@@ -1,3 +1,24 @@
+/*
+ * JBoss, Home of Professional Open Source.
+ * See the COPYRIGHT.txt file distributed with this work for information
+ * regarding copyright ownership.  Some portions may be licensed
+ * to Red Hat, Inc. under one or more contributor license agreements.
+ *
+ * This library is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either
+ * version 2.1 of the License, or (at your option) any later version.
+ *
+ * This library is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public
+ * License along with this library; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
+ * 02110-1301 USA.
+ */
 package org.teiid.translator.infinispan.hotrod;
 
 
@@ -40,7 +61,7 @@ import infinispan.com.squareup.protoparser.TypeElement;
 
 
 public class ProtobufMetadataProcessor implements MetadataProcessor<InfinispanConnection> {
-    private static final String WRAPPING_DEFINITIONS_RES = "/org/infinispan/protostream/message-wrapping.proto";
+    //private static final String WRAPPING_DEFINITIONS_RES = "/org/infinispan/protostream/message-wrapping.proto";
 
     @ExtensionMetadataProperty(applicable=Table.class,
             datatype=String.class,
@@ -86,15 +107,37 @@ public class ProtobufMetadataProcessor implements MetadataProcessor<InfinispanCo
 
     private String protoFilePath;
     private ProtobufResource protoResource;
+    private String protobufName;
+    private boolean registerProtobuf = true;
 
     @TranslatorProperty(display="Protobuf file path", category=PropertyType.IMPORT,
-            description="Protobuf metadata file path.")
+            description="Protobuf file path to load as the schema of this model")
     public String getProtoFilePath() {
         return protoFilePath;
     }
 
     public void setProtoFilePath(String path) {
         this.protoFilePath = path;
+    }
+
+    @TranslatorProperty(display="Protobuf Name", category=PropertyType.IMPORT,
+            description="When loading the Protobuf contents from Infinispan, limit the import to this given protobuf name")
+    public String getProtobufName() {
+        return protobufName;
+    }
+
+    public void setProtobufName(String name) {
+        this.protobufName = name;
+    }
+
+    @TranslatorProperty(display="Register Protobuf", category=PropertyType.IMPORT,
+            description="When true (default), protobuf representing schema is registered dynamically with Infinispan")
+    public boolean isRegisterProtobuf() {
+        return this.registerProtobuf;
+    }
+
+    public void setRegisterProtobuf(boolean register) {
+        this.registerProtobuf = register;
     }
 
     @Override
@@ -116,19 +159,34 @@ public class ProtobufMetadataProcessor implements MetadataProcessor<InfinispanCo
             }
             this.protoResource = new ProtobufResource(protobufFile, protoContents);
             toTeiidSchema(protobufFile, protoContents, metadataFactory);
-        } else {
+        } else if( this.protobufName != null) {
             // Read from cache
+            boolean added = false;
             BasicCache<Object, Object> metadataCache = connection
                     .getCacheFactory().getCache(ProtobufMetadataManagerConstants.PROTOBUF_METADATA_CACHE_NAME);
             for (Object key : metadataCache.keySet()) {
-                if (WRAPPING_DEFINITIONS_RES.equals(key)) {
+                if (!this.protobufName.equalsIgnoreCase((String)key)) {
                     continue;
                 }
                 protobufFile = (String)key;
                 protoContents = (String)metadataCache.get(key);
                 // read all the schemas
                 toTeiidSchema(protobufFile, protoContents, metadataFactory);
+                added = true;
+                this.registerProtobuf = false; // already registered no need to re-register
+                break;
             }
+
+            if (!added) {
+                throw new TranslatorException(InfinispanPlugin.Event.TEIID25012,
+                        InfinispanPlugin.Util.gs(InfinispanPlugin.Event.TEIID25012, this.protobufName));
+            }
+        } else if (this.protoResource != null) {
+            toTeiidSchema(this.protoResource.getIdentifier(), this.protoResource.getContents(), metadataFactory);
+        } else {
+            // expand the error message
+            throw new TranslatorException(InfinispanPlugin.Event.TEIID25011,
+                    InfinispanPlugin.Util.gs(InfinispanPlugin.Event.TEIID25011));
         }
     }
 
@@ -388,6 +446,10 @@ public class ProtobufMetadataProcessor implements MetadataProcessor<InfinispanCo
         return this.protoResource;
     }
 
+    public void setProtobufResource(ProtobufResource resource) {
+        this.protoResource = resource;
+    }
+
     static String getPseudo(Column column) {
         return column.getProperty(PSEUDO, false);
     }
@@ -412,7 +474,10 @@ public class ProtobufMetadataProcessor implements MetadataProcessor<InfinispanCo
     }
 
     static int getTag(Column column) {
-        return Integer.parseInt(column.getProperty(TAG, false));
+        if (column.getProperty(TAG, false) != null) {
+            return Integer.parseInt(column.getProperty(TAG, false));
+        }
+        return -1;
     }
 
     static int getParentTag(Column column) {
