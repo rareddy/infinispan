@@ -25,6 +25,7 @@ import static org.teiid.language.SQLConstants.Reserved.HAVING;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.teiid.language.*;
 import org.teiid.language.Comparison.Operator;
@@ -51,6 +52,7 @@ public class IckleConvertionVisitor extends SQLStringVisitor {
     private InfinispanDocumentNode rootNode;
     private DocumentNode joinedNode;
     private List<String> projectedDocumentAttributes = new ArrayList<>();
+    private AtomicInteger aliasCounter = new AtomicInteger();
 
     public IckleConvertionVisitor(RuntimeMetadata metadata, boolean includePK) {
         this.metadata = metadata;
@@ -62,18 +64,32 @@ public class IckleConvertionVisitor extends SQLStringVisitor {
         return namedTable.getMetadataObject();
     }
 
+    public NamedTable getTopLevelNamedTable() {
+        return namedTable;
+    }
+
     public Table getWorkingTable() {
         return this.originalNamedTable.getMetadataObject();
     }
 
+    public NamedTable getWorkingNamedTable() {
+        return this.originalNamedTable;
+    }
+
+
     @Override
     public void visit(NamedTable obj) {
         this.originalNamedTable = obj;
+        if (obj.getCorrelationName() == null) {
+            obj.setCorrelationName(obj.getMetadataObject().getName().toLowerCase()+"_"+aliasCounter.getAndIncrement());
+        }
 
         if (this.rootNode == null) {
             String messageName = null;
+            String aliasName = null;
             String mergedTableName = ProtobufMetadataProcessor.getMerge(obj.getMetadataObject());
             if (mergedTableName == null) {
+                aliasName = obj.getCorrelationName();
                 messageName = getMessageName(obj.getMetadataObject());
                 this.namedTable = obj;
                 this.rootNode = new InfinispanDocumentNode(obj.getMetadataObject(), true);
@@ -82,7 +98,8 @@ public class IckleConvertionVisitor extends SQLStringVisitor {
                 try {
                     Table mergedTable = this.metadata.getTable(mergedTableName);
                     messageName = getMessageName(mergedTable);
-                    this.namedTable = new NamedTable(mergedTable.getName(), obj.getCorrelationName(), mergedTable);
+                    aliasName = mergedTable.getName().toLowerCase()+"_"+aliasCounter.getAndIncrement();
+                    this.namedTable = new NamedTable(mergedTable.getName(), aliasName, mergedTable);
                     this.rootNode = new InfinispanDocumentNode(mergedTable, true);
                     this.joinedNode = this.rootNode.joinWith(JoinType.INNER_JOIN,
                             new InfinispanDocumentNode(obj.getMetadataObject(), true));
@@ -92,9 +109,9 @@ public class IckleConvertionVisitor extends SQLStringVisitor {
             }
 
             buffer.append(messageName);
-            if (obj.getCorrelationName() != null) {
+            if (aliasName != null) {
                 buffer.append(Tokens.SPACE);
-                buffer.append(obj.getCorrelationName());
+                buffer.append(aliasName);
             }
 
             if (this.includePK) {
@@ -147,6 +164,7 @@ public class IckleConvertionVisitor extends SQLStringVisitor {
         else {
             cond = obj.getCondition();
             append(obj.getLeftItem());
+            this.originalNamedTable = (NamedTable)obj.getRightItem();
             Table right = ((NamedTable)obj.getRightItem()).getMetadataObject();
             this.joinedNode.joinWith(obj.getJoinType(), new InfinispanDocumentNode(right, true));
         }

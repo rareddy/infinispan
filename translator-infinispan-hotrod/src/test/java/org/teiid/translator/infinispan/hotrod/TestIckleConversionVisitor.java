@@ -79,19 +79,19 @@ public class TestIckleConversionVisitor {
     @Test
     public void testSelectStar() throws Exception {
         helpExecute("select * from model.G1",
-                "SELECT e1, e2, e3, e4, e5 FROM pm1.G1");
+                "SELECT g1_0.e1, g1_0.e2, g1_0.e3, g1_0.e4, g1_0.e5 FROM pm1.G1 g1_0");
     }
 
     @Test
     public void testProjection() throws Exception {
         helpExecute("select e1, e2 from model.G1",
-                "SELECT e1, e2 FROM pm1.G1");
+                "SELECT g1_0.e1, g1_0.e2 FROM pm1.G1 g1_0");
     }
 
     @Test
     public void testEqualityClause() throws Exception {
         helpExecute("select * from model.G1 where e1 = 1",
-                "SELECT e1, e2, e3, e4, e5 FROM pm1.G1 WHERE e1 = 1");
+                "SELECT g1_0.e1, g1_0.e2, g1_0.e3, g1_0.e4, g1_0.e5 FROM pm1.G1 g1_0 WHERE g1_0.e1 = 1");
     }
 
     @Test
@@ -103,49 +103,55 @@ public class TestIckleConversionVisitor {
     @Test
     public void testInClause() throws Exception {
         helpExecute("select e1, e2 from model.G1 where e2 IN ('foo', 'bar')",
-                "SELECT e1, e2 FROM pm1.G1 WHERE e2 IN ('foo', 'bar')");
+                "SELECT g1_0.e1, g1_0.e2 FROM pm1.G1 g1_0 WHERE g1_0.e2 IN ('foo', 'bar')");
     }
 
     @Test
     public void testAggregate() throws Exception {
-        helpExecute("select count(*) from model.G1", "SELECT COUNT(*) FROM pm1.G1");
-        helpExecute("select sum(e1) from model.G1", "SELECT SUM(e1) FROM pm1.G1");
-        helpExecute("select min(e1) from model.G1", "SELECT MIN(e1) FROM pm1.G1");
+        helpExecute("select count(*) from model.G1", "SELECT COUNT(*) FROM pm1.G1 g1_0");
+        helpExecute("select sum(e1) from model.G1", "SELECT SUM(g1_0.e1) FROM pm1.G1 g1_0");
+        helpExecute("select min(e1) from model.G1", "SELECT MIN(g1_0.e1) FROM pm1.G1 g1_0");
     }
 
     @Test
     public void testHaving() throws Exception {
         helpExecute("select sum(e3) from model.G1 where e2 = '2' group by e1 having sum(e3) > 10",
-                "SELECT SUM(e3) FROM pm1.G1 WHERE e2 = '2' GROUP BY e1 HAVING SUM(e3) > 10.0");
+                "SELECT SUM(g1_0.e3) FROM pm1.G1 g1_0 WHERE g1_0.e2 = '2' GROUP BY g1_0.e1 HAVING SUM(g1_0.e3) > 10.0");
     }
 
     @Test
     public void testOrderBy() throws Exception {
         helpExecute("select e1, e2, e3 from model.G1 where e2 IN ('foo', 'bar') order by e3",
-                "SELECT e1, e2, e3 FROM pm1.G1 WHERE e2 IN ('foo', 'bar') ORDER BY e3");
+                "SELECT g1_0.e1, g1_0.e2, g1_0.e3 FROM pm1.G1 g1_0 WHERE g1_0.e2 IN ('foo', 'bar') ORDER BY g1_0.e3");
     }
 
     @Test
     public void testUpdate() throws Exception {
         helpUpdate("update G1 set e2='bar' where e1 = 1 and e2 = 'foo'",
-                "FROM pm1.G1 __t WHERE __t.e1 = 1 AND __t.e2 = 'foo'");
+                "FROM pm1.G1 g1_0 WHERE g1_0.e1 = 1 AND g1_0.e2 = 'foo'");
+
+        helpUpdate("update G4 set e2='bar' where e1 = 1 and e2 = 'foo'",
+                "FROM pm1.G2 g2_1 WHERE g2_1.g4.e1 = 1 AND g2_1.g4.e2 = 'foo'");
     }
 
     @Test
     public void testDelete() throws Exception {
         helpUpdate("delete from G1 where e1 > 1 or e2 = 'foo'",
-                "SELECT __t.e1 FROM pm1.G1 __t WHERE __t.e1 > 1 OR __t.e2 = 'foo'");
+                "SELECT g1_0.e1 FROM pm1.G1 g1_0 WHERE g1_0.e1 > 1 OR g1_0.e2 = 'foo'");
+
+        helpUpdate("delete from G4 where e1 = 1 and e2 = 'foo'",
+                "FROM pm1.G2 g2_1 WHERE g2_1.g4.e1 = 1 AND g2_1.g4.e2 = 'foo'");
     }
 
     @Test
     public void testIsNullClause() throws Exception {
-        helpExecute("select e1 from model.G1 where e2 IS NULL", "SELECT e1 FROM pm1.G1 WHERE e2 IS NULL");
-        helpExecute("select e1 from model.G1 where e2 IS NOT NULL", "SELECT e1 FROM pm1.G1 WHERE e2 IS NOT NULL");
+        helpExecute("select e1 from model.G1 where e2 IS NULL", "SELECT g1_0.e1 FROM pm1.G1 g1_0 WHERE g1_0.e2 IS NULL");
+        helpExecute("select e1 from model.G1 where e2 IS NOT NULL", "SELECT g1_0.e1 FROM pm1.G1 g1_0 WHERE g1_0.e2 IS NOT NULL");
     }
 
     @Test
     public void testWithEmbeddedChild() throws Exception {
-        helpExecute("select * from model.G2", "FROM pm1.G2");
+        helpExecute("select * from model.G2", "FROM pm1.G2 g2_0");
         helpExecute("select * from model.G2 as p", "FROM pm1.G2 p");
         helpExecute("select * from model.G2 as p where g3_e1 = 2",
                 "FROM pm1.G2 p WHERE p.g3.e1 = 2");
@@ -153,11 +159,11 @@ public class TestIckleConversionVisitor {
 
     @Test
     public void testWithExternalChild() throws Exception {
-        helpExecute("select * from model.G4", "FROM pm1.G2");
-        helpExecute("select * from model.G4 as p", "FROM pm1.G2 p");
-        helpExecute("select * from model.G4 where G2_e1 = 2", "FROM pm1.G2 WHERE e1 = 2");
+        helpExecute("select * from model.G4", "FROM pm1.G2 g2_1");
+        helpExecute("select * from model.G4 as p", "FROM pm1.G2 g2_0");
+        helpExecute("select * from model.G4 where G2_e1 = 2", "FROM pm1.G2 g2_1 WHERE g2_1.e1 = 2");
         IckleConvertionVisitor visitor = helpExecute("select * from model.G4 as p where p.G2_e1 = 2",
-                "FROM pm1.G2 p WHERE p.e1 = 2");
+                "FROM pm1.G2 g2_0 WHERE g2_0.e1 = 2");
         assertArrayEquals(new String[] { "pm1.G2/pm1.G4/e1", "pm1.G2/pm1.G4/e2" },
                 visitor.getProjectedDocumentAttributes().toArray(new String[2]));
     }

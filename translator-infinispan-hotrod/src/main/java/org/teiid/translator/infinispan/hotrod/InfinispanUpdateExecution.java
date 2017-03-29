@@ -32,13 +32,21 @@ import org.infinispan.query.dsl.QueryFactory;
 import org.teiid.infinispan.api.InfinispanConnection;
 import org.teiid.infinispan.api.InfinispanDocument;
 import org.teiid.infinispan.api.TeiidMarshallerContext;
+import org.teiid.language.ColumnReference;
 import org.teiid.language.Command;
+import org.teiid.language.Delete;
+import org.teiid.language.NamedTable;
+import org.teiid.language.SQLConstants.Tokens;
+import org.teiid.language.visitor.SQLStringVisitor;
+import org.teiid.metadata.AbstractMetadataRecord;
 import org.teiid.metadata.RuntimeMetadata;
 import org.teiid.metadata.Table;
 import org.teiid.translator.DataNotAvailableException;
 import org.teiid.translator.ExecutionContext;
 import org.teiid.translator.TranslatorException;
 import org.teiid.translator.UpdateExecution;
+import org.teiid.translator.document.Document;
+import org.teiid.translator.infinispan.hotrod.DocumentFilter.Action;
 import org.teiid.translator.infinispan.hotrod.InfinispanUpdateVisitor.OperationType;
 
 public class InfinispanUpdateExecution implements UpdateExecution {
@@ -68,9 +76,46 @@ public class InfinispanUpdateExecution implements UpdateExecution {
 
         try {
             Table table = visitor.getTopLevelTable();
-            TeiidMarshallerContext.setMarsheller(MarshallerBuilder.getMarshaller(table, this.metadata));
             final String PK = MarshallerBuilder.getDocumentAttributeName(table.getPrimaryKey().getColumns().get(0),
                     false, this.metadata);
+
+            DocumentFilter docFilter = null;
+            if (visitor.isNestedOperation() && visitor.getWhereClause() != null) {
+                Action action = Action.ALWAYSADD;
+                if (command instanceof Delete) {
+                    action = Action.REMOVE;
+                }
+                SQLStringVisitor ssv = new SQLStringVisitor() {
+
+                    @Override
+                    public void visit(ColumnReference obj) {
+                        String groupName = null;
+                        NamedTable group = obj.getTable();
+                        if(group.getCorrelationName() != null) {
+                            groupName = group.getCorrelationName();
+                        } else {
+                            Table groupID = group.getMetadataObject();
+                            if (groupID.getFullName().equals(visitor.getTopLevelTable().getFullName())) {
+                                groupName = visitor.getTopLevelNamedTable().getCorrelationName();
+                            } else {
+                                groupName = visitor.getWorkingNamedTable().getCorrelationName();
+                            }
+                        }
+                        buffer.append(groupName).append(Tokens.DOT).append(getName(obj.getMetadataObject()));
+                    }
+
+                    @Override
+                    public String getName(AbstractMetadataRecord object) {
+                        return object.getName();
+                    }
+                };
+                ssv.append(visitor.getWhereClause());
+
+                docFilter = new ComplexDocumentFilter(visitor.getTopLevelNamedTable(), visitor.getWorkingNamedTable(),
+                        this.metadata, ssv.toString(), action);
+            }
+
+            TeiidMarshallerContext.setMarsheller(MarshallerBuilder.getMarshaller(table, this.metadata, docFilter));
 
             // if the message in defined in different cache than the default, switch it out now.
             final RemoteCache<Object,Object> cache = InfinispanQueryExecution.getCache(table, connection);
@@ -81,8 +126,11 @@ public class InfinispanUpdateExecution implements UpdateExecution {
                     @Override
                     public void run(Object row) throws TranslatorException {
                         if (visitor.isNestedOperation()) {
-                            // TODO: how to do nested filtering?? before the delete
-                            throw new TranslatorException(InfinispanPlugin.Util.gs(InfinispanPlugin.Event.TEIID25010));
+                            String childName = ProtobufMetadataProcessor.getMessageName(visitor.getWorkingTable());
+                            InfinispanDocument document = (InfinispanDocument)row;
+                            cache.replace(document.getProperties().get(PK), document);
+                            // false below means count that not matched, i.e. deleted count
+                            updateCount = updateCount + document.getUpdateCount(childName, false);
                         } else {
                             Object key = ((Object[])row)[0];
                             cache.remove(key);
@@ -95,8 +143,19 @@ public class InfinispanUpdateExecution implements UpdateExecution {
                     @Override
                     public void run(Object row) throws TranslatorException {
                         if (visitor.isNestedOperation()) {
-                            // TODO: how to do nested filtering?? before the update
-                            throw new TranslatorException(InfinispanPlugin.Util.gs(InfinispanPlugin.Event.TEIID25010));
+                            String childName = ProtobufMetadataProcessor.getMessageName(visitor.getWorkingTable());
+                            InfinispanDocument document = (InfinispanDocument)row;
+                            List<? extends Document> children = document.getChildDocuments(childName);
+                            if (children != null && !children.isEmpty()) {
+                                for (Document doc : children) {
+                                    InfinispanDocument child = (InfinispanDocument)doc;
+                                    if (child.isMatched()) {
+                                        mergeUpdatePayload(child, visitor.getUpdatePayload());
+                                        updateCount++;
+                                    }
+                                }
+                                cache.replace(document.getProperties().get(PK), document);
+                            }
                         } else {
                             InfinispanDocument updated = mergeUpdatePayload((InfinispanDocument) row,
                                     visitor.getUpdatePayload());
@@ -132,7 +191,23 @@ public class InfinispanUpdateExecution implements UpdateExecution {
                         throw new TranslatorException(InfinispanPlugin.Util.gs(InfinispanPlugin.Event.TEIID25009,
                                 table.getName(), visitor.getIdentity()));
                     }
-                    previous.addChildDocument(visitor.getInsertPayload().getName(), visitor.getInsertPayload());
+
+                    // make sure the child does not exist before inserting
+                    boolean merged = false;
+                    String childName = ProtobufMetadataProcessor.getMessageName(visitor.getWorkingTable());
+                    List<? extends Document> children = previous.getChildDocuments(childName);
+                    for (Document doc : children) {
+                        InfinispanDocument child = (InfinispanDocument)doc;
+                        if (child.isMatched()) {
+                            // update the child object
+                            mergeUpdatePayload(child, visitor.getUpdatePayload());
+                            merged = true;
+                        }
+                    }
+                    if (!merged) {
+                        previous.addChildDocument(visitor.getInsertPayload().getName(), visitor.getInsertPayload());
+                    }
+                    replace = true;
                 } else {
                     if (previous != null) {
                         previous = mergeUpdatePayload(previous, visitor.getUpdatePayload());

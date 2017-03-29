@@ -44,6 +44,7 @@ public class InfinispanUpdateVisitor extends IckleConvertionVisitor {
     private Map<String, Object> updatePayload = new HashMap<>();
     private Object identity;
     private boolean nested;
+    private Condition whereClause;
 
     public InfinispanUpdateVisitor(RuntimeMetadata metadata) {
         super(metadata, true);
@@ -195,6 +196,8 @@ public class InfinispanUpdateVisitor extends IckleConvertionVisitor {
         if (obj.getWhere() != null) {
             buffer.append(Tokens.SPACE).append(SQLConstants.Reserved.WHERE).append(Tokens.SPACE);
             append(obj.getWhere());
+            // Can't use the original where string because it is designed for the document model querying
+            this.whereClause = obj.getWhere();
         }
 
         // table that update issued for
@@ -204,26 +207,14 @@ public class InfinispanUpdateVisitor extends IckleConvertionVisitor {
         }
 
         // read the properties
-        try {
-            int elementCount = obj.getChanges().size();
-            for (int i = 0; i < elementCount; i++) {
-                Column column = obj.getChanges().get(i).getSymbol().getMetadataObject();
-                Expression expr = obj.getChanges().get(i).getValue();
-                Object value = resolveExpressionValue(expr);
-                String attrName = MarshallerBuilder.getDocumentAttributeName(column, this.nested, this.metadata);
-                this.updatePayload.put(attrName, value);
-            }
-        } catch (TranslatorException e) {
-            this.exceptions.add(e);
+        int elementCount = obj.getChanges().size();
+        for (int i = 0; i < elementCount; i++) {
+            Column column = obj.getChanges().get(i).getSymbol().getMetadataObject();
+            Expression expr = obj.getChanges().get(i).getValue();
+            Object value = resolveExpressionValue(expr);
+            //String attrName = MarshallerBuilder.getDocumentAttributeName(column, this.nested, this.metadata);
+            this.updatePayload.put(getName(column), value);
         }
-    }
-
-    @Override
-    public void visit(NamedTable obj) {
-        if (obj.getCorrelationName() == null) {
-            obj.setCorrelationName("__t");
-        }
-        super.visit(obj);
     }
 
     @Override
@@ -240,6 +231,7 @@ public class InfinispanUpdateVisitor extends IckleConvertionVisitor {
         if (obj.getWhere() != null) {
             buffer.append(Tokens.SPACE).append(SQLConstants.Reserved.WHERE).append(Tokens.SPACE);
             append(obj.getWhere());
+            this.whereClause = obj.getWhere();
         }
     }
 
@@ -264,9 +256,16 @@ public class InfinispanUpdateVisitor extends IckleConvertionVisitor {
 
     public String getDeleteQuery() {
         StringBuilder sb = new StringBuilder();
-        addSelectedColumns(sb);
-        sb.append(Tokens.SPACE).append(SQLConstants.Reserved.FROM);
+        if (!isNestedOperation()) {
+            addSelectedColumns(sb);
+            sb.append(Tokens.SPACE);
+        }
+        sb.append(SQLConstants.Reserved.FROM);
         sb.append(Tokens.SPACE).append(super.toString());
         return  sb.toString();
+    }
+
+    Condition getWhereClause() {
+        return whereClause;
     }
 }

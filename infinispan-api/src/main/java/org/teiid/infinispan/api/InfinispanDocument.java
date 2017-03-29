@@ -21,12 +21,22 @@
  */
 package org.teiid.infinispan.api;
 
+import java.util.HashMap;
+import java.util.Map;
 import java.util.TreeMap;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.teiid.translator.document.Document;
 
 public class InfinispanDocument extends Document {
     private TreeMap<Integer, TableWireFormat> wireMap;
+    private boolean matched;
+    private Map<String, Stats> statsMap = new HashMap<>();
+
+    static class Stats {
+        AtomicInteger matched = new AtomicInteger(0);
+        AtomicInteger unmatched = new AtomicInteger(0);
+    }
 
     public InfinispanDocument(String name, TreeMap<Integer, TableWireFormat> columnMap, InfinispanDocument parent) {
         super(name, false, parent);
@@ -44,5 +54,40 @@ public class InfinispanDocument extends Document {
 
     public TreeMap<Integer, TableWireFormat> getWireMap() {
         return wireMap;
+    }
+
+    public boolean isMatched() {
+        return matched;
+    }
+
+    public void setMatched(boolean matched) {
+        this.matched = matched;
+    }
+
+    public void incrementUpdateCount(String childName, boolean matched) {
+        Stats s = statsMap.get(childName);
+        if (s == null) {
+            s = new Stats();
+            statsMap.put(childName, s);
+        }
+
+        if (matched) {
+            s.matched.incrementAndGet();
+        } else {
+            s.unmatched.incrementAndGet();
+        }
+    }
+
+    public int getUpdateCount(String childName, boolean matched) {
+        Stats s = statsMap.get(childName);
+        if (s == null) {
+            return 0;
+        }
+
+        if (matched) {
+            return s.matched.get();
+        } else {
+            return s.unmatched.get();
+        }
     }
 }

@@ -22,21 +22,24 @@
 package org.teiid.translator.infinispan.hotrod;
 
 import java.util.List;
-
 import org.infinispan.client.hotrod.RemoteCache;
 import org.infinispan.client.hotrod.RemoteCacheManager;
 import org.teiid.infinispan.api.InfinispanConnection;
 import org.teiid.infinispan.api.TeiidMarshallerContext;
 import org.teiid.infinispan.api.TeiidMarsheller;
 import org.teiid.language.QueryExpression;
+import org.teiid.language.Select;
+import org.teiid.language.visitor.SQLStringVisitor;
 import org.teiid.logging.LogConstants;
 import org.teiid.logging.LogManager;
+import org.teiid.metadata.AbstractMetadataRecord;
 import org.teiid.metadata.RuntimeMetadata;
 import org.teiid.metadata.Table;
 import org.teiid.translator.DataNotAvailableException;
 import org.teiid.translator.ExecutionContext;
 import org.teiid.translator.ResultSetExecution;
 import org.teiid.translator.TranslatorException;
+import org.teiid.translator.infinispan.hotrod.DocumentFilter.Action;
 
 public class InfinispanQueryExecution implements ResultSetExecution {
 
@@ -59,13 +62,27 @@ public class InfinispanQueryExecution implements ResultSetExecution {
     @Override
     public void execute() throws TranslatorException {
         try {
-            IckleConvertionVisitor visitor = new IckleConvertionVisitor(metadata, false);
+            final IckleConvertionVisitor visitor = new IckleConvertionVisitor(metadata, false);
             visitor.append(this.command);
             Table table = visitor.getTopLevelTable();
-            this.marshaller = MarshallerBuilder.getMarshaller(table, this.metadata);
-            TeiidMarshallerContext.setMarsheller(this.marshaller);
             String queryStr = visitor.getQuery();
             LogManager.logDetail(LogConstants.CTX_CONNECTOR, "SourceQuery:", queryStr);
+
+            DocumentFilter docFilter = null;
+            if (queryStr.startsWith("FROM ") && ((Select)command).getWhere() != null) {
+                SQLStringVisitor ssv = new SQLStringVisitor() {
+                    @Override
+                    public String getName(AbstractMetadataRecord object) {
+                        return object.getName();
+                    }
+                };
+                ssv.append(((Select)command).getWhere());
+                docFilter = new ComplexDocumentFilter(visitor.getTopLevelNamedTable(), visitor.getWorkingNamedTable(),
+                        this.metadata, ssv.toString(), Action.ADD);
+            }
+
+            this.marshaller = MarshallerBuilder.getMarshaller(table, this.metadata, docFilter);
+            TeiidMarshallerContext.setMarsheller(this.marshaller);
 
             // if the message in defined in different cache than the default, switch it out now.
             RemoteCache<Object, Object> cache =  getCache(table, connection);

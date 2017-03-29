@@ -46,6 +46,7 @@ public class MarshallerBuilder {
             }
             String mergeName = ProtobufMetadataProcessor.getMerge(table);
             if (mergeName != null && mergeName.equals(parentTbl.getFullName())) {
+                // one 2 many relation
                 int parentTag = ProtobufMetadataProcessor.getParentTag(table);
                 String childName = ProtobufMetadataProcessor.getMessageName(table);
                 TableWireFormat child = new TableWireFormat(childName, parentTag);
@@ -68,11 +69,13 @@ public class MarshallerBuilder {
             }
             int parentTag = ProtobufMetadataProcessor.getParentTag(column);
             if ( parentTag == -1) {
+                // normal columns
                 int tag = ProtobufMetadataProcessor.getTag(column);
                 String name = getDocumentAttributeName(column, nested, metadata);
                 TableWireFormat twf = new TableWireFormat(name, tag, column);
                 wireMap.put(twf.getReadTag(), twf);
             } else {
+                // columns from one 2 one relation
                 int tag = ProtobufMetadataProcessor.getTag(column);
                 String name = getDocumentAttributeName(column, true, metadata);
                 TableWireFormat child = new TableWireFormat(name, tag, column);
@@ -127,5 +130,11 @@ public class MarshallerBuilder {
 
     public static TeiidTableMarsheller getMarshaller(Table table, RuntimeMetadata metadata) throws TranslatorException {
         return new TeiidTableMarsheller(ProtobufMetadataProcessor.getMessageName(table), getWireMap(table, metadata));
+    }
+
+    public static TeiidTableMarsheller getMarshaller(Table table, RuntimeMetadata metadata, DocumentFilter filter)
+            throws TranslatorException {
+        return new TeiidTableMarsheller(ProtobufMetadataProcessor.getMessageName(table), getWireMap(table, metadata),
+                filter);
     }
 }
