@@ -47,8 +47,8 @@ import org.teiid.core.types.TransformationException;
 import org.teiid.core.types.basic.ObjectToAnyTransform;
 import org.teiid.core.util.ObjectConverterUtil;
 
-import infinispan.com.squareup.protoparser.DataType;
-import infinispan.com.squareup.protoparser.DataType.ScalarType;
+import com.squareup.protoparser.DataType;
+import com.squareup.protoparser.DataType.ScalarType;
 
 public class ProtobufDataManager {
 

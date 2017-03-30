@@ -60,15 +60,16 @@ public class InfinispanConnectionImpl extends BasicConnection implements Infinis
             if (protobuf != null && registered.get(protobuf.getIdentifier()) == null) {
                 RemoteCache<String, String> metadataCache = manager
                         .getCache(ProtobufMetadataManagerConstants.PROTOBUF_METADATA_CACHE_NAME);
-                if (metadataCache.get(protobuf.getIdentifier()) == null) {
+                if (metadataCache != null && metadataCache.get(protobuf.getIdentifier()) == null) {
                     metadataCache.put(protobuf.getIdentifier(), protobuf.getContents());
                     String errors = metadataCache.get(ProtobufMetadataManagerConstants.ERRORS_KEY_SUFFIX);
                     if (errors != null) {
                        throw new TranslatorException(InfinispanManagedConnectionFactory.UTIL.getString("proto_error", errors));
                     }
                     registered.put(protobuf.getIdentifier(), Boolean.TRUE);
+                } else {
+                    throw new TranslatorException(ProtobufMetadataManagerConstants.PROTOBUF_METADATA_CACHE_NAME+" not found");
                 }
-
             }
         } catch(Throwable t) {
             throw new TranslatorException(t);

@@ -15,7 +15,9 @@
         <module name="org.jboss.teiid.api" />
         <module name="org.jboss.teiid.translator.document.api" />
         <module name="org.jboss.teiid" />    
-        <module name="org.jboss.teiid.translator.infinispan.api"/>        
-   	    <module name="org.infinispan.infinispan-remote" />
+        <module name="org.jboss.teiid.translator.infinispan.api"/>
+        <module name="com.squareup"/>        
+   	    <module name="org.infinispan.client.hotrod" slot="teiid"/>
+   	    <module name="org.infinispan.commons" slot="teiid"/>
     </dependencies>   
 </module>

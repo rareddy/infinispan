@@ -136,6 +136,9 @@ public class TestIckleConversionVisitor {
 
     @Test
     public void testDelete() throws Exception {
+        helpUpdate("delete from G1",
+                "SELECT g1_0.e1 FROM pm1.G1 g1_0");
+
         helpUpdate("delete from G1 where e1 > 1 or e2 = 'foo'",
                 "SELECT g1_0.e1 FROM pm1.G1 g1_0 WHERE g1_0.e1 > 1 OR g1_0.e2 = 'foo'");
 

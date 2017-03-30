@@ -21,23 +21,24 @@
  */
 package org.teiid.infinispan.api;
 
+import static org.junit.Assert.assertEquals;
+
 import org.infinispan.commons.api.BasicCache;
+import org.junit.After;
 import org.junit.Before;
-import org.teiid.infinispan.api.InfinispanConnection;
-import static org.junit.Assert.*;
 
 public class TestHotrodServer {
     HotRodTestServer server;
 
     @Before
     public void setup() {
-        this.server = new HotRodTestServer();
+        this.server = new HotRodTestServer(31323);
     }
 
-//    @After
-//    public void tearDown() {
-//        this.server.stop();
-//    }
+    @After
+    public void tearDown() {
+        this.server.stop();
+    }
 
     //@Test
     public void testServer() throws Exception {
@@ -48,7 +49,6 @@ public class TestHotrodServer {
         cache.put(101, "Infinispan");
 
         assertEquals("hello", cache.get(100));
-        assertEquals("infinispan", cache.get(101));
+        assertEquals("Infinispan", cache.get(101));
     }
-
 }

@@ -49,15 +49,15 @@ import org.teiid.translator.TranslatorException;
 import org.teiid.translator.TranslatorProperty;
 import org.teiid.translator.TranslatorProperty.PropertyType;
 
-import infinispan.com.squareup.protoparser.DataType;
-import infinispan.com.squareup.protoparser.EnumConstantElement;
-import infinispan.com.squareup.protoparser.EnumElement;
-import infinispan.com.squareup.protoparser.FieldElement;
-import infinispan.com.squareup.protoparser.FieldElement.Label;
-import infinispan.com.squareup.protoparser.MessageElement;
-import infinispan.com.squareup.protoparser.ProtoFile;
-import infinispan.com.squareup.protoparser.ProtoParser;
-import infinispan.com.squareup.protoparser.TypeElement;
+import com.squareup.protoparser.DataType;
+import com.squareup.protoparser.EnumConstantElement;
+import com.squareup.protoparser.EnumElement;
+import com.squareup.protoparser.FieldElement;
+import com.squareup.protoparser.FieldElement.Label;
+import com.squareup.protoparser.MessageElement;
+import com.squareup.protoparser.ProtoFile;
+import com.squareup.protoparser.ProtoParser;
+import com.squareup.protoparser.TypeElement;
 
 
 public class ProtobufMetadataProcessor implements MetadataProcessor<InfinispanConnection> {

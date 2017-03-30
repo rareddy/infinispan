@@ -27,6 +27,7 @@ import javax.resource.ResourceException;
 
 import org.infinispan.configuration.cache.ConfigurationBuilder;
 import org.infinispan.configuration.cache.Index;
+import org.infinispan.configuration.global.GlobalConfiguration;
 import org.infinispan.configuration.global.GlobalConfigurationBuilder;
 import org.infinispan.manager.DefaultCacheManager;
 import org.infinispan.server.hotrod.HotRodServer;
@@ -40,17 +41,18 @@ public class HotRodTestServer {
     private DefaultCacheManager defaultCacheManager;
     private BasicConnectionFactory<InfinispanConnectionImpl> connectionFactory;
 
-    public HotRodTestServer() {
+    public HotRodTestServer(int port) {
         ConfigurationBuilder c = new ConfigurationBuilder();
-        GlobalConfigurationBuilder gc = new GlobalConfigurationBuilder().nonClusteredDefault();
-        this.defaultCacheManager = new DefaultCacheManager(gc.build(), c.build(gc.build()), true);
+        GlobalConfigurationBuilder gc = GlobalConfigurationBuilder.defaultClusteredBuilder();
+        GlobalConfiguration config = gc.build();
+        this.defaultCacheManager = new DefaultCacheManager(config, c.build(config));
         this.defaultCacheManager.defineConfiguration("default", getConfigurationBuilder().build());
-        this.defaultCacheManager.getCache("default");
+        this.defaultCacheManager.startCaches("default");
 
         HotRodServerConfigurationBuilder builder = new HotRodServerConfigurationBuilder();
-        HotRodServer server = new HotRodServer();
+        this.server = new HotRodServer();
         InetSocketAddress addr = new InetSocketAddress(0);
-        builder.host("127.0.0.1").port(addr.getPort());
+        builder.host("127.0.0.1").port(port);
         server.start(builder.build(), this.defaultCacheManager);
     }
 
