@@ -94,9 +94,16 @@ public class TestHotrodExecution {
         //connection.registerProtobufFile(new ProtobufResource("tables.proto",
         //ObjectConverterUtil.convertFileToString(UnitTestUtil.getTestDataFile("tables.proto"))));
 
+        // the below also test one-2-one relation.
         command = utility.parseCommand("DELETE FROM G2");
         update = ef.createUpdateExecution(command, ec, metadata, connection);
         update.execute();
+
+        command = utility.parseCommand("SELECT e1, e2, g3_e1, g3_e2 FROM G2");
+        exec = ef.createResultSetExecution((QueryExpression) command, ec, metadata, connection);
+        exec.execute();
+
+        assertNull(exec.next());
 
         command = utility.parseCommand("INSERT INTO G2 (e1, e2, g3_e1, g3_e2) values (1, 'one', 1, 'one')");
         update = ef.createUpdateExecution(command,ec, metadata, connection);
@@ -114,7 +121,6 @@ public class TestHotrodExecution {
         assertArrayEquals(new Object[] {new Integer(2), "two", new Integer(2), "two"}, exec.next().toArray());
         assertNull(exec.next());
 
-
         command = utility.parseCommand("INSERT INTO G4 (e1, e2, G2_e1) values (1, 'one', 1)");
         update = ef.createUpdateExecution(command,ec, metadata, connection);
         update.execute();
@@ -131,14 +137,6 @@ public class TestHotrodExecution {
         update = ef.createUpdateExecution(command,ec, metadata, connection);
         update.execute();
 
-        command = utility.parseCommand("SELECT e1, e2, g3_e1, g3_e2 FROM G2");
-        exec = ef.createResultSetExecution((QueryExpression) command, ec, metadata, connection);
-        exec.execute();
-
-        assertArrayEquals(new Object[] {new Integer(1), "one", new Integer(1), "one"}, exec.next().toArray());
-        assertArrayEquals(new Object[] {new Integer(2), "two", new Integer(2), "two"}, exec.next().toArray());
-        assertNull(exec.next());
-
         command = utility.parseCommand("SELECT e1, e2 FROM G4");
         exec = ef.createResultSetExecution((QueryExpression) command, ec, metadata, connection);
         exec.execute();
@@ -149,11 +147,103 @@ public class TestHotrodExecution {
         assertArrayEquals(new Object[] {new Integer(4), "two-two"}, exec.next().toArray());
         assertNull(exec.next());
 
-        command = utility.parseCommand("SELECT g2.e1, g4.e1, g4.e2 FROM G2 g2 JOIN G4 g4 ON g2.e1 = g4.G2_e1 WHERE g2.e2 = 'two'");
+        command = utility.parseCommand("SELECT g2.e1, g4.e1, g4.e2 FROM G2 g2 JOIN G4 g4 "
+                + "ON g2.e1 = g4.G2_e1 WHERE g2.e2 = 'two'");
+        exec = ef.createResultSetExecution((QueryExpression) command, ec, metadata, connection);
+        exec.execute();
+
+        assertArrayEquals(new Object[] {new Integer(2), new Integer(3), "two"}, exec.next().toArray());
+        assertArrayEquals(new Object[] {new Integer(2), new Integer(4), "two-two"}, exec.next().toArray());
+        assertNull(exec.next());
+
+        // updates
+        command = utility.parseCommand("UPDATE G2 SET e2 = 'two-m', g3_e2 = 'two-mm' WHERE e1 = 2");
+        update = ef.createUpdateExecution(command,ec, metadata, connection);
+        update.execute();
+
+        command = utility.parseCommand("SELECT e1, e2, g3_e1, g3_e2 FROM G2 ORDER BY e1");
+        exec = ef.createResultSetExecution((QueryExpression) command, ec, metadata, connection);
+        exec.execute();
+
+        assertArrayEquals(new Object[] {new Integer(1), "one", new Integer(1), "one"}, exec.next().toArray());
+        assertArrayEquals(new Object[] {new Integer(2), "two-m", new Integer(2), "two-mm"}, exec.next().toArray());
+        assertNull(exec.next());
+
+        // complex updates
+        command = utility.parseCommand("UPDATE G4 SET e2 = 'two-2' WHERE e2 = 'two-two' OR e2 = 'one-one'");
+        update = ef.createUpdateExecution(command,ec, metadata, connection);
+        update.execute();
+
+        command = utility.parseCommand("SELECT e1, e2 FROM G4");
+        exec = ef.createResultSetExecution((QueryExpression) command, ec, metadata, connection);
+        exec.execute();
+
+        assertArrayEquals(new Object[] {new Integer(1), "one"}, exec.next().toArray());
+        assertArrayEquals(new Object[] {new Integer(2), "two-2"}, exec.next().toArray());
+        assertArrayEquals(new Object[] {new Integer(3), "two"}, exec.next().toArray());
+        assertArrayEquals(new Object[] {new Integer(4), "two-2"}, exec.next().toArray());
+        assertNull(exec.next());
+
+        // deletes
+        command = utility.parseCommand("DELETE FROM G4 where e2 = 'two-2'");
+        update = ef.createUpdateExecution(command, ec, metadata, connection);
+        update.execute();
+
+        command = utility.parseCommand("SELECT e1, e2 FROM G4");
+        exec = ef.createResultSetExecution((QueryExpression) command, ec, metadata, connection);
+        exec.execute();
+
+        assertArrayEquals(new Object[] {new Integer(1), "one"}, exec.next().toArray());
+        assertArrayEquals(new Object[] {new Integer(3), "two"}, exec.next().toArray());
+        assertNull(exec.next());
+
+        command = utility.parseCommand("DELETE FROM G2 where e1 = 1");
+        update = ef.createUpdateExecution(command, ec, metadata, connection);
+        update.execute();
+
+        command = utility.parseCommand("SELECT * FROM G2");
+        exec = ef.createResultSetExecution((QueryExpression) command, ec, metadata, connection);
+        exec.execute();
+
+        assertArrayEquals(new Object[] {new Integer(2), "two-m", new Integer(2), "two-mm", null, null}, exec.next().toArray());
+        assertNull(exec.next());
+
+        // upsert
+        command = utility.parseCommand("UPSERT INTO G2 (e1, e2, g3_e1, g3_e2) values (1, 'one', 1, 'one')");
+        update = ef.createUpdateExecution(command,ec, metadata, connection);
+        update.execute();
+
+        command = utility.parseCommand("SELECT * FROM G2");
+        exec = ef.createResultSetExecution((QueryExpression) command, ec, metadata, connection);
+        exec.execute();
+
+        assertArrayEquals(new Object[] {new Integer(1), "one", new Integer(1), "one", null, null}, exec.next().toArray());
+        assertArrayEquals(new Object[] {new Integer(2), "two-m", new Integer(2), "two-mm", null, null}, exec.next().toArray());
+        assertNull(exec.next());
+
+        command = utility.parseCommand("UPSERT INTO G2 (e1, e2, g3_e1, g3_e2) values (2, 'two', 2, 'two')");
+        update = ef.createUpdateExecution(command,ec, metadata, connection);
+        update.execute();
+
+        command = utility.parseCommand("SELECT * FROM G2");
+        exec = ef.createResultSetExecution((QueryExpression) command, ec, metadata, connection);
+        exec.execute();
+
+        assertArrayEquals(new Object[] {new Integer(1), "one", new Integer(1), "one", null, null}, exec.next().toArray());
+        assertArrayEquals(new Object[] {new Integer(2), "two", new Integer(2), "two", null, null}, exec.next().toArray());
+        assertNull(exec.next());
+
+
+        command = utility.parseCommand("UPSERT INTO G4 (e1, e2, G2_e1) values (5, 'upsert', 2)");
+        update = ef.createUpdateExecution(command,ec, metadata, connection);
+        update.execute();
+
+        command = utility.parseCommand("SELECT e1, e2 FROM G4");
         exec = ef.createResultSetExecution((QueryExpression) command, ec, metadata, connection);
         exec.execute();
 
         assertArrayEquals(new Object[] {new Integer(3), "two"}, exec.next().toArray());
+        assertArrayEquals(new Object[] {new Integer(5), "upsert"}, exec.next().toArray());
         assertNull(exec.next());
     }
 }

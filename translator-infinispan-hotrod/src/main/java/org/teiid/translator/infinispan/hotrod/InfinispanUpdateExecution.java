@@ -75,7 +75,7 @@ public class InfinispanUpdateExecution implements UpdateExecution {
         }
 
         try {
-            Table table = visitor.getTopLevelTable();
+            Table table = visitor.getParentTable();
             final String PK = MarshallerBuilder.getDocumentAttributeName(table.getPrimaryKey().getColumns().get(0),
                     false, this.metadata);
 
@@ -95,10 +95,10 @@ public class InfinispanUpdateExecution implements UpdateExecution {
                             groupName = group.getCorrelationName();
                         } else {
                             Table groupID = group.getMetadataObject();
-                            if (groupID.getFullName().equals(visitor.getTopLevelTable().getFullName())) {
-                                groupName = visitor.getTopLevelNamedTable().getCorrelationName();
+                            if (groupID.getFullName().equals(visitor.getParentTable().getFullName())) {
+                                groupName = visitor.getParentNamedTable().getCorrelationName();
                             } else {
-                                groupName = visitor.getWorkingNamedTable().getCorrelationName();
+                                groupName = visitor.getQueryNamedTable().getCorrelationName();
                             }
                         }
                         buffer.append(groupName).append(Tokens.DOT).append(getName(obj.getMetadataObject()));
@@ -111,7 +111,7 @@ public class InfinispanUpdateExecution implements UpdateExecution {
                 };
                 ssv.append(visitor.getWhereClause());
 
-                docFilter = new ComplexDocumentFilter(visitor.getTopLevelNamedTable(), visitor.getWorkingNamedTable(),
+                docFilter = new ComplexDocumentFilter(visitor.getParentNamedTable(), visitor.getQueryNamedTable(),
                         this.metadata, ssv.toString(), action);
             }
 
@@ -126,7 +126,7 @@ public class InfinispanUpdateExecution implements UpdateExecution {
                     @Override
                     public void run(Object row) throws TranslatorException {
                         if (visitor.isNestedOperation()) {
-                            String childName = ProtobufMetadataProcessor.getMessageName(visitor.getWorkingTable());
+                            String childName = ProtobufMetadataProcessor.getMessageName(visitor.getQueryTable());
                             InfinispanDocument document = (InfinispanDocument)row;
                             cache.replace(document.getProperties().get(PK), document);
                             // false below means count that not matched, i.e. deleted count
@@ -142,26 +142,10 @@ public class InfinispanUpdateExecution implements UpdateExecution {
                 paginateResults(cache, visitor.getUpdateQuery(), new Task() {
                     @Override
                     public void run(Object row) throws TranslatorException {
-                        if (visitor.isNestedOperation()) {
-                            String childName = ProtobufMetadataProcessor.getMessageName(visitor.getWorkingTable());
-                            InfinispanDocument document = (InfinispanDocument)row;
-                            List<? extends Document> children = document.getChildDocuments(childName);
-                            if (children != null && !children.isEmpty()) {
-                                for (Document doc : children) {
-                                    InfinispanDocument child = (InfinispanDocument)doc;
-                                    if (child.isMatched()) {
-                                        mergeUpdatePayload(child, visitor.getUpdatePayload());
-                                        updateCount++;
-                                    }
-                                }
-                                cache.replace(document.getProperties().get(PK), document);
-                            }
-                        } else {
-                            InfinispanDocument updated = mergeUpdatePayload((InfinispanDocument) row,
-                                    visitor.getUpdatePayload());
-                            cache.replace(updated.getProperties().get(PK), updated);
-                            updateCount++;
-                        }
+                        InfinispanDocument previous = (InfinispanDocument)row;
+                        int count = mergeUpdatePayload(previous, visitor.getInsertPayload());
+                        cache.replace(previous.getProperties().get(PK), previous);
+                        updateCount = updateCount + count;
                     }
                 }, this.executionContext.getBatchSize());
             } else if (visitor.getOperationType() == OperationType.INSERT) {
@@ -171,7 +155,8 @@ public class InfinispanUpdateExecution implements UpdateExecution {
                         throw new TranslatorException(InfinispanPlugin.Util.gs(InfinispanPlugin.Event.TEIID25009,
                                 table.getName(), visitor.getIdentity()));
                     }
-                    previous.addChildDocument(visitor.getInsertPayload().getName(), visitor.getInsertPayload());
+                    String childName = ProtobufMetadataProcessor.getMessageName(visitor.getQueryTable());
+                    previous.addChildDocument(childName, visitor.getInsertPayload().getChildDocuments(childName).get(0));
                 } else {
                     // this is always single row; putIfAbsent is not working correctly.
                     if (previous != null) {
@@ -191,26 +176,12 @@ public class InfinispanUpdateExecution implements UpdateExecution {
                         throw new TranslatorException(InfinispanPlugin.Util.gs(InfinispanPlugin.Event.TEIID25009,
                                 table.getName(), visitor.getIdentity()));
                     }
-
-                    // make sure the child does not exist before inserting
-                    boolean merged = false;
-                    String childName = ProtobufMetadataProcessor.getMessageName(visitor.getWorkingTable());
-                    List<? extends Document> children = previous.getChildDocuments(childName);
-                    for (Document doc : children) {
-                        InfinispanDocument child = (InfinispanDocument)doc;
-                        if (child.isMatched()) {
-                            // update the child object
-                            mergeUpdatePayload(child, visitor.getUpdatePayload());
-                            merged = true;
-                        }
-                    }
-                    if (!merged) {
-                        previous.addChildDocument(visitor.getInsertPayload().getName(), visitor.getInsertPayload());
-                    }
+                    String childName = ProtobufMetadataProcessor.getMessageName(visitor.getQueryTable());
+                    previous.addChildDocument(childName, visitor.getInsertPayload().getChildDocuments(childName).get(0));
                     replace = true;
                 } else {
                     if (previous != null) {
-                        previous = mergeUpdatePayload(previous, visitor.getUpdatePayload());
+                        mergeUpdatePayload(previous, visitor.getInsertPayload());
                         replace = true;
                     } else {
                         previous = visitor.getInsertPayload();
@@ -261,6 +232,42 @@ public class InfinispanUpdateExecution implements UpdateExecution {
             previous.addProperty(entry.getKey(), entry.getValue());
         }
         return previous;
+    }
+
+    private int mergeUpdatePayload(InfinispanDocument previous,
+            InfinispanDocument updates) {
+        int updated = 1;
+        for (Entry<String, Object> entry:updates.getProperties().entrySet()) {
+            previous.addProperty(entry.getKey(), entry.getValue());
+        }
+
+        // update children if any
+        for (Entry<String, List<Document>> entry:updates.getChildren().entrySet()) {
+            String childName = entry.getKey();
+
+            List<? extends Document> childUpdates = updates.getChildDocuments(childName);
+            InfinispanDocument childUpdate = (InfinispanDocument)childUpdates.get(0);
+            if (childUpdate.getProperties().isEmpty()) {
+                continue;
+            }
+
+            List<? extends Document> previousChildren = previous.getChildDocuments(childName);
+            if (previousChildren == null || previousChildren.isEmpty()) {
+                previous.addChildDocument(childName, childUpdate);
+            } else {
+                for (Document doc : previousChildren) {
+                    InfinispanDocument previousChild = (InfinispanDocument)doc;
+                    if (previousChild.isMatched()) {
+                        for (Entry<String, Object> childEntry:childUpdate.getProperties().entrySet()) {
+                            String key = childEntry.getKey().substring(childEntry.getKey().lastIndexOf('/')+1);
+                            previousChild.addProperty(key, childEntry.getValue());
+                            updated++;
+                        }
+                    }
+                }
+            }
+        }
+        return updated;
     }
 
     @Override

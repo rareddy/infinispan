@@ -24,7 +24,9 @@ package org.teiid.translator.infinispan.hotrod;
 import static org.teiid.language.SQLConstants.Reserved.HAVING;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import org.teiid.language.*;
@@ -43,8 +45,8 @@ public class IckleConvertionVisitor extends SQLStringVisitor {
     protected ArrayList<TranslatorException> exceptions = new ArrayList<TranslatorException>();
     protected RuntimeMetadata metadata;
     protected List<Expression> projectedExpressions = new ArrayList<>();
-    protected NamedTable namedTable;
-    protected NamedTable originalNamedTable;
+    protected NamedTable parentTable;
+    protected NamedTable queriedTable;
     private Integer rowLimit;
     private Integer rowOffset;
     private boolean includePK;
@@ -53,6 +55,7 @@ public class IckleConvertionVisitor extends SQLStringVisitor {
     private DocumentNode joinedNode;
     private List<String> projectedDocumentAttributes = new ArrayList<>();
     private AtomicInteger aliasCounter = new AtomicInteger();
+    protected boolean nested;
 
     public IckleConvertionVisitor(RuntimeMetadata metadata, boolean includePK) {
         this.metadata = metadata;
@@ -60,26 +63,29 @@ public class IckleConvertionVisitor extends SQLStringVisitor {
         this.shortNameOnly = true;
     }
 
-    public Table getTopLevelTable() {
-        return namedTable.getMetadataObject();
+    public Table getParentTable() {
+        return parentTable.getMetadataObject();
     }
 
-    public NamedTable getTopLevelNamedTable() {
-        return namedTable;
+    public NamedTable getParentNamedTable() {
+        return parentTable;
     }
 
-    public Table getWorkingTable() {
-        return this.originalNamedTable.getMetadataObject();
+    public Table getQueryTable() {
+        return this.queriedTable.getMetadataObject();
     }
 
-    public NamedTable getWorkingNamedTable() {
-        return this.originalNamedTable;
+    public NamedTable getQueryNamedTable() {
+        return this.queriedTable;
     }
 
+    public boolean isNestedOperation() {
+        return this.nested;
+    }
 
     @Override
     public void visit(NamedTable obj) {
-        this.originalNamedTable = obj;
+        this.queriedTable = obj;
         if (obj.getCorrelationName() == null) {
             obj.setCorrelationName(obj.getMetadataObject().getName().toLowerCase()+"_"+aliasCounter.getAndIncrement());
         }
@@ -91,18 +97,36 @@ public class IckleConvertionVisitor extends SQLStringVisitor {
             if (mergedTableName == null) {
                 aliasName = obj.getCorrelationName();
                 messageName = getMessageName(obj.getMetadataObject());
-                this.namedTable = obj;
+                this.parentTable = obj;
                 this.rootNode = new InfinispanDocumentNode(obj.getMetadataObject(), true);
                 this.joinedNode = this.rootNode;
+
+                // check to see if there is one-2-one rows
+                Set<String> tags = new HashSet<>();
+                for (Column column:obj.getMetadataObject().getColumns()) {
+                    if (ProtobufMetadataProcessor.getParentTag(column) != -1) {
+                        String childMessageName = ProtobufMetadataProcessor.getMessageName(column);
+                        if (!tags.contains(childMessageName)) {
+                          tags.add(childMessageName);
+                          //TODO: DocumentNode needs to be refactored to just take name, not table
+                          Table t = new Table();
+                          t.setName(childMessageName);
+                          this.joinedNode = this.rootNode.joinWith(JoinType.INNER_JOIN,
+                                    new InfinispanDocumentNode(t, false));
+                        }
+                    }
+                }
+
             } else {
                 try {
                     Table mergedTable = this.metadata.getTable(mergedTableName);
                     messageName = getMessageName(mergedTable);
                     aliasName = mergedTable.getName().toLowerCase()+"_"+aliasCounter.getAndIncrement();
-                    this.namedTable = new NamedTable(mergedTable.getName(), aliasName, mergedTable);
+                    this.parentTable = new NamedTable(mergedTable.getName(), aliasName, mergedTable);
                     this.rootNode = new InfinispanDocumentNode(mergedTable, true);
                     this.joinedNode = this.rootNode.joinWith(JoinType.INNER_JOIN,
                             new InfinispanDocumentNode(obj.getMetadataObject(), true));
+                    this.nested = true;
                 } catch (TranslatorException e) {
                     this.exceptions.add(e);
                 }
@@ -115,7 +139,7 @@ public class IckleConvertionVisitor extends SQLStringVisitor {
             }
 
             if (this.includePK) {
-                KeyRecord pk = this.namedTable.getMetadataObject().getPrimaryKey();
+                KeyRecord pk = this.parentTable.getMetadataObject().getPrimaryKey();
                 if (pk != null) {
                     for (Column column : pk.getColumns()) {
                         projectedExpressions.add(new ColumnReference(obj, column.getName(), column, column.getJavaType()));
@@ -135,7 +159,7 @@ public class IckleConvertionVisitor extends SQLStringVisitor {
     }
 
     public boolean isPartOfPrimaryKey(String columnName) {
-        KeyRecord pk = getTopLevelTable().getPrimaryKey();
+        KeyRecord pk = getParentTable().getPrimaryKey();
         if (pk != null) {
             for (Column column:pk.getColumns()) {
                 if (column.getName().equals(columnName)) {
@@ -164,7 +188,7 @@ public class IckleConvertionVisitor extends SQLStringVisitor {
         else {
             cond = obj.getCondition();
             append(obj.getLeftItem());
-            this.originalNamedTable = (NamedTable)obj.getRightItem();
+            this.queriedTable = (NamedTable)obj.getRightItem();
             Table right = ((NamedTable)obj.getRightItem()).getMetadataObject();
             this.joinedNode.joinWith(obj.getJoinType(), new InfinispanDocumentNode(right, true));
         }
@@ -211,6 +235,9 @@ public class IckleConvertionVisitor extends SQLStringVisitor {
         if (obj.getOrderBy() != null) {
             buffer.append(Tokens.SPACE);
             visitNode(obj.getOrderBy());
+            if (this.nested) {
+                this.exceptions.add(new TranslatorException(InfinispanPlugin.Util.gs(InfinispanPlugin.Event.TEIID25010)));
+            }
         }
 
         if (obj.getLimit() != null) {
@@ -250,15 +277,15 @@ public class IckleConvertionVisitor extends SQLStringVisitor {
             }
             column = normalizePseudoColumn(column);
             if (!this.includePK || !isPartOfPrimaryKey(column.getName())) {
-                if (column.getParent().equals(this.namedTable.getMetadataObject())){
-                    this.projectedExpressions.add(new ColumnReference(this.namedTable, column.getName(), column, column.getJavaType()));
+                if (column.getParent().equals(this.parentTable.getMetadataObject())){
+                    this.projectedExpressions.add(new ColumnReference(this.parentTable, column.getName(), column, column.getJavaType()));
                 } else {
-                    this.projectedExpressions.add(new ColumnReference(this.originalNamedTable, column.getName(), column, column.getJavaType()));
+                    this.projectedExpressions.add(new ColumnReference(this.queriedTable, column.getName(), column, column.getJavaType()));
                 }
             }
             boolean nested = false;
-            if (ProtobufMetadataProcessor.getMessageName(column) != null
-                    || ProtobufMetadataProcessor.getMerge((Table) column.getParent()) != null) {
+            if (ProtobufMetadataProcessor.getParentTag(column) != -1
+                    || ProtobufMetadataProcessor.getParentTag((Table) column.getParent()) != -1) {
                 this.avoidProjection = true;
                 nested = true;
             }
@@ -269,8 +296,9 @@ public class IckleConvertionVisitor extends SQLStringVisitor {
             }
         }
         else if (obj.getExpression() instanceof Function) {
-            if (this.namedTable.equals(this.originalNamedTable)) {
-                this.exceptions.add(new TranslatorException(InfinispanPlugin.Event.TEIID25008, InfinispanPlugin.Util.gs(InfinispanPlugin.Event.TEIID25008)));
+            if (!this.parentTable.equals(this.queriedTable)) {
+                this.exceptions.add(new TranslatorException(InfinispanPlugin.Event.TEIID25008,
+                        InfinispanPlugin.Util.gs(InfinispanPlugin.Event.TEIID25008)));
             }
             AggregateFunction func = (AggregateFunction)obj.getExpression();
             this.projectedExpressions.add(func);
@@ -308,7 +336,7 @@ public class IckleConvertionVisitor extends SQLStringVisitor {
     }
 
     String getQualifiedName(Column column) {
-        String aliasName = this.namedTable.getCorrelationName();
+        String aliasName = this.parentTable.getCorrelationName();
         String nis = getName(column);
         String parentName = ProtobufMetadataProcessor.getParentColumnName(column);
         if (parentName == null && !ProtobufMetadataProcessor.isPseudo(column)) {

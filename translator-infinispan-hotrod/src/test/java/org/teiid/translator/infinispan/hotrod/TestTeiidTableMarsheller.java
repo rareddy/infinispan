@@ -87,8 +87,8 @@ public class TestTeiidTableMarsheller {
     public void testReadSimple() throws Exception {
         IckleConvertionVisitor visitor = helpExecute("select * from G1");
         TeiidTableMarsheller marshaller = new TeiidTableMarsheller(
-                ProtobufMetadataProcessor.getMessageName(visitor.getTopLevelTable()),
-                MarshallerBuilder.getWireMap(visitor.getTopLevelTable(), visitor.getMetadata()));
+                ProtobufMetadataProcessor.getMessageName(visitor.getParentTable()),
+                MarshallerBuilder.getWireMap(visitor.getParentTable(), visitor.getMetadata()));
         TeiidMarshallerContext.setMarsheller(marshaller);
 
         SerializationContext baseCtx = ProtobufUtil.newSerializationContext(Configuration.builder().build());
@@ -128,8 +128,8 @@ public class TestTeiidTableMarsheller {
     public void testWriteSimple() throws Exception {
         IckleConvertionVisitor visitor = helpExecute("select * from G1");
         TeiidTableMarsheller marshaller = new TeiidTableMarsheller(
-                ProtobufMetadataProcessor.getMessageName(visitor.getTopLevelTable()),
-                MarshallerBuilder.getWireMap(visitor.getTopLevelTable(), visitor.getMetadata()));
+                ProtobufMetadataProcessor.getMessageName(visitor.getParentTable()),
+                MarshallerBuilder.getWireMap(visitor.getParentTable(), visitor.getMetadata()));
         TeiidMarshallerContext.setMarsheller(marshaller);
 
         SerializationContext baseCtx = ProtobufUtil.newSerializationContext(Configuration.builder().build());
@@ -145,7 +145,7 @@ public class TestTeiidTableMarsheller {
         });
 
         InfinispanDocument g1 = new InfinispanDocument("pm1.G1",
-                MarshallerBuilder.getWireMap(visitor.getTopLevelTable(), visitor.getMetadata()), null);
+                MarshallerBuilder.getWireMap(visitor.getParentTable(), visitor.getMetadata()), null);
         g1.addProperty("e1", 1);
         g1.addProperty("e2", "foo");
         g1.addProperty("e3", 1.234f);
@@ -229,7 +229,7 @@ public class TestTeiidTableMarsheller {
     }
 
     private InfinispanDocument buildG2(IckleConvertionVisitor visitor) throws TranslatorException {
-        TreeMap<Integer, TableWireFormat> wireMap = MarshallerBuilder.getWireMap(visitor.getTopLevelTable(),
+        TreeMap<Integer, TableWireFormat> wireMap = MarshallerBuilder.getWireMap(visitor.getParentTable(),
                 visitor.getMetadata());
 
         InfinispanDocument g2 = new InfinispanDocument("pm1.G2", wireMap, null);
@@ -293,8 +293,8 @@ public class TestTeiidTableMarsheller {
     public void testReadComplex() throws Exception {
         IckleConvertionVisitor visitor = helpExecute("select * from G2");
         TeiidTableMarsheller marshaller = new TeiidTableMarsheller(
-                ProtobufMetadataProcessor.getMessageName(visitor.getTopLevelTable()),
-                MarshallerBuilder.getWireMap(visitor.getTopLevelTable(), visitor.getMetadata()));
+                ProtobufMetadataProcessor.getMessageName(visitor.getParentTable()),
+                MarshallerBuilder.getWireMap(visitor.getParentTable(), visitor.getMetadata()));
         TeiidMarshallerContext.setMarsheller(marshaller);
 
         SerializationContext baseCtx = ProtobufUtil.newSerializationContext(Configuration.builder().build());
@@ -332,8 +332,8 @@ public class TestTeiidTableMarsheller {
     public void testWriteComplex() throws Exception {
         IckleConvertionVisitor visitor = helpExecute("select * from G2");
         TeiidTableMarsheller marshaller = new TeiidTableMarsheller(
-                ProtobufMetadataProcessor.getMessageName(visitor.getTopLevelTable()),
-                MarshallerBuilder.getWireMap(visitor.getTopLevelTable(), visitor.getMetadata()));
+                ProtobufMetadataProcessor.getMessageName(visitor.getParentTable()),
+                MarshallerBuilder.getWireMap(visitor.getParentTable(), visitor.getMetadata()));
         TeiidMarshallerContext.setMarsheller(marshaller);
 
         SerializationContext baseCtx = ProtobufUtil.newSerializationContext(Configuration.builder().build());

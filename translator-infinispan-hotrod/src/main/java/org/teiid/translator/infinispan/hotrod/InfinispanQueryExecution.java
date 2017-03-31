@@ -64,7 +64,7 @@ public class InfinispanQueryExecution implements ResultSetExecution {
         try {
             final IckleConvertionVisitor visitor = new IckleConvertionVisitor(metadata, false);
             visitor.append(this.command);
-            Table table = visitor.getTopLevelTable();
+            Table table = visitor.getParentTable();
             String queryStr = visitor.getQuery();
             LogManager.logDetail(LogConstants.CTX_CONNECTOR, "SourceQuery:", queryStr);
 
@@ -77,7 +77,7 @@ public class InfinispanQueryExecution implements ResultSetExecution {
                     }
                 };
                 ssv.append(((Select)command).getWhere());
-                docFilter = new ComplexDocumentFilter(visitor.getTopLevelNamedTable(), visitor.getWorkingNamedTable(),
+                docFilter = new ComplexDocumentFilter(visitor.getParentNamedTable(), visitor.getQueryNamedTable(),
                         this.metadata, ssv.toString(), Action.ADD);
             }
 

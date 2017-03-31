@@ -43,7 +43,6 @@ public class InfinispanUpdateVisitor extends IckleConvertionVisitor {
     private InfinispanDocument insertPayload;
     private Map<String, Object> updatePayload = new HashMap<>();
     private Object identity;
-    private boolean nested;
     private Condition whereClause;
 
     public InfinispanUpdateVisitor(RuntimeMetadata metadata) {
@@ -58,17 +57,12 @@ public class InfinispanUpdateVisitor extends IckleConvertionVisitor {
         return this.operationType;
     }
 
-
     public InfinispanDocument getInsertPayload() {
         return insertPayload;
     }
 
     public Map<String, Object> getUpdatePayload() {
         return updatePayload;
-    }
-
-    public boolean isNestedOperation() {
-        return this.nested;
     }
 
     @Override
@@ -85,15 +79,14 @@ public class InfinispanUpdateVisitor extends IckleConvertionVisitor {
         Table table = obj.getTable().getMetadataObject();
         try {
             // create the top table parent document, where insert is actually being done at
-            InfinispanDocument targetDocument = buildTargetDocument(table);
+            InfinispanDocument targetDocument = buildTargetDocument(table, true);
 
             // build the payload object from insert
             int elementCount = obj.getColumns().size();
             for (int i = 0; i < elementCount; i++) {
-
-                ColumnReference columnReferce = obj.getColumns().get(i);
-                Column column = columnReferce.getMetadataObject();
-                this.projectedExpressions.add(columnReferce);
+                ColumnReference columnReference = obj.getColumns().get(i);
+                Column column = columnReference.getMetadataObject();
+                this.projectedExpressions.add(columnReference);
 
                 List<Expression> values = ((ExpressionValueSource)obj.getValueSource()).getValues();
                 Expression expr = values.get(i);
@@ -105,14 +98,6 @@ public class InfinispanUpdateVisitor extends IckleConvertionVisitor {
                     this.identity = value;
                 }
             }
-
-            // add default values in for the table insert issued for
-            for (Column column : table.getColumns()) {
-                String attrName = MarshallerBuilder.getDocumentAttributeName(column, this.nested, this.metadata);
-                if (column.getDefaultValue() != null && !targetDocument.getProperties().containsKey(attrName)) {
-                    updateDocument(targetDocument, column, column.getDefaultValue());
-                }
-            }
             this.insertPayload = targetDocument;
         } catch (NumberFormatException e) {
             this.exceptions.add(new TranslatorException(e));
@@ -122,43 +107,96 @@ public class InfinispanUpdateVisitor extends IckleConvertionVisitor {
 
         if (this.identity == null) {
             this.exceptions.add(new TranslatorException(
-                    InfinispanPlugin.Util.gs(InfinispanPlugin.Event.TEIID25004, getTopLevelTable().getName())));
+                    InfinispanPlugin.Util.gs(InfinispanPlugin.Event.TEIID25004, getParentTable().getName())));
         }
     }
 
     @SuppressWarnings("unchecked")
-    private void updateDocument(InfinispanDocument targetDocument, Column column, Object value)
+    private void updateDocument(InfinispanDocument parentDocument, Column column, Object value)
             throws TranslatorException {
-        String attrName = MarshallerBuilder.getDocumentAttributeName(column, this.nested, this.metadata);
-        if (value instanceof List) {
-            List<Object> l = (List<Object>)value;
-            for(Object o : l) {
-                targetDocument.addArrayProperty(attrName, o);
-            }
-        } else {
-            targetDocument.addProperty(attrName, value);
+        boolean complexObject = this.nested;
+        InfinispanDocument targetDocument = parentDocument;
+
+        int parentTag = ProtobufMetadataProcessor.getParentTag(column);
+        if (parentTag != -1) {
+            // this is in one-2-one case. Dummy child will be there due to buildTargetDocument logic.
+            String messageName = ProtobufMetadataProcessor.getMessageName(column);
+            InfinispanDocument child = (InfinispanDocument)parentDocument.getChildDocuments(messageName).get(0);
+            targetDocument = child;
+            complexObject = true;
+        } else if (this.nested){
+            Table table = (Table)column.getParent();
+            String messageName = ProtobufMetadataProcessor.getMessageName(table);
+            InfinispanDocument child = (InfinispanDocument)parentDocument.getChildDocuments(messageName).get(0);
+            targetDocument = child;
+            complexObject = true;
         }
-        this.updatePayload.put(attrName, value);
+
+        if (!ProtobufMetadataProcessor.isPseudo(column)) {
+            if (value instanceof List) {
+                List<Object> l = (List<Object>)value;
+                for(Object o : l) {
+                    targetDocument.addArrayProperty(getName(column), o);
+                }
+            } else {
+                targetDocument.addProperty(getName(column), value);
+            }
+            String attrName = MarshallerBuilder.getDocumentAttributeName(column, complexObject, this.metadata);
+            this.updatePayload.put(attrName, value);
+        }
     }
 
-    private InfinispanDocument buildTargetDocument(Table table) throws TranslatorException {
-        TreeMap<Integer, TableWireFormat> wireMap = MarshallerBuilder.getWireMap(getTopLevelTable(), metadata);
-        String messageName = ProtobufMetadataProcessor.getMessageName(table);
-        if (table.equals(getTopLevelTable())) {
-            return new InfinispanDocument(messageName, wireMap, null);
-        } else {
-            // now create the document at child node
+    private InfinispanDocument buildTargetDocument(Table table, boolean addDefaults) throws TranslatorException {
+        TreeMap<Integer, TableWireFormat> wireMap = MarshallerBuilder.getWireMap(getParentTable(), metadata);
+        String messageName = ProtobufMetadataProcessor.getMessageName(getParentTable());
+        InfinispanDocument parentDocument = new InfinispanDocument(messageName, wireMap, null);
+
+        // if there are any one-2-one relation build them and add defaults
+        addDefaults(parentDocument, getParentTable(), addDefaults);
+
+        // now create the document at child node, this is one-2-many case
+        if (!table.equals(getParentTable())) {
+            messageName = ProtobufMetadataProcessor.getMessageName(table);
             int parentTag = ProtobufMetadataProcessor.getParentTag(table);
             TableWireFormat twf = wireMap.get(TableWireFormat.buildNestedTag(parentTag));
             this.nested = true;
-            return new InfinispanDocument(messageName, twf.getNestedWireMap(), null);
+            InfinispanDocument child = new InfinispanDocument(messageName, twf.getNestedWireMap(), parentDocument);
+            addDefaults(child, table, addDefaults);
+            parentDocument.addChildDocument(messageName, child);
+        }
+        return parentDocument;
+    }
+
+    private void addDefaults(InfinispanDocument parentDocument, Table table, boolean addDefaults)
+            throws TranslatorException {
+        for (Column column : table.getColumns()) {
+            int parentTag = ProtobufMetadataProcessor.getParentTag(column);
+            if (parentTag != -1) {
+                String messageName = ProtobufMetadataProcessor.getMessageName(column);
+                List<?> children = parentDocument.getChildDocuments(messageName);
+                InfinispanDocument child = null;
+                if (children == null || children.isEmpty()) {
+                    TableWireFormat twf = parentDocument.getWireMap().get(TableWireFormat.buildNestedTag(parentTag));
+                    child = new InfinispanDocument(messageName, twf.getNestedWireMap(), parentDocument);
+                    parentDocument.addChildDocument(messageName, child);
+                } else {
+                    child = (InfinispanDocument)children.get(0);
+                }
+                if (addDefaults && column.getDefaultValue() != null) {
+                    child.addProperty(getName(column), column.getDefaultValue());
+                }
+            } else {
+                if (addDefaults && column.getDefaultValue() != null) {
+                    parentDocument.addProperty(getName(column), column.getDefaultValue());
+                }
+            }
         }
     }
 
     public Column getPrimaryKey() {
         Column pkColumn = null;
-        if (getTopLevelTable().getPrimaryKey() != null) {
-            pkColumn = getTopLevelTable().getPrimaryKey().getColumns().get(0);
+        if (getParentTable().getPrimaryKey() != null) {
+            pkColumn = getParentTable().getPrimaryKey().getColumns().get(0);
         }
         return pkColumn;
     }
@@ -202,18 +240,24 @@ public class InfinispanUpdateVisitor extends IckleConvertionVisitor {
 
         // table that update issued for
         Table table = obj.getTable().getMetadataObject();
-        if (!table.equals(getTopLevelTable())) {
+        if (!table.equals(getParentTable())) {
             this.nested = true;
         }
 
         // read the properties
-        int elementCount = obj.getChanges().size();
-        for (int i = 0; i < elementCount; i++) {
-            Column column = obj.getChanges().get(i).getSymbol().getMetadataObject();
-            Expression expr = obj.getChanges().get(i).getValue();
-            Object value = resolveExpressionValue(expr);
-            //String attrName = MarshallerBuilder.getDocumentAttributeName(column, this.nested, this.metadata);
-            this.updatePayload.put(getName(column), value);
+        try {
+            InfinispanDocument targetDocument = buildTargetDocument(table, false);
+            int elementCount = obj.getChanges().size();
+            for (int i = 0; i < elementCount; i++) {
+                Column column = obj.getChanges().get(i).getSymbol().getMetadataObject();
+                Expression expr = obj.getChanges().get(i).getValue();
+                Object value = resolveExpressionValue(expr);
+                //this.updatePayload.put(getName(column), value);
+                updateDocument(targetDocument, column, value);
+            }
+            this.insertPayload = targetDocument;
+        } catch (TranslatorException e) {
+            this.exceptions.add(e);
         }
     }
 
@@ -224,7 +268,7 @@ public class InfinispanUpdateVisitor extends IckleConvertionVisitor {
 
         // table that update issued for
         Table table = obj.getTable().getMetadataObject();
-        if (!table.equals(getTopLevelTable())) {
+        if (!table.equals(getParentTable())) {
             this.nested = true;
         }
 

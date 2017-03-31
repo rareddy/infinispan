@@ -32,6 +32,7 @@ import org.teiid.language.Update;
 import org.teiid.metadata.MetadataFactory;
 import org.teiid.query.metadata.DDLStringVisitor;
 import org.teiid.query.metadata.TransformationMetadata;
+import org.teiid.translator.TranslatorException;
 
 public class TestIckleConversionVisitor {
 
@@ -49,6 +50,9 @@ public class TestIckleConversionVisitor {
         Select cmd = (Select)utility.parseCommand(query);
         IckleConvertionVisitor visitor = new IckleConvertionVisitor(new RuntimeMetadataImpl(metadata), false);
         visitor.visitNode(cmd);
+        if (!visitor.exceptions.isEmpty()) {
+            throw visitor.exceptions.get(0);
+        }
         String actual = visitor.getQuery();
         assertEquals(expected, actual);
         return visitor;
@@ -123,6 +127,12 @@ public class TestIckleConversionVisitor {
     public void testOrderBy() throws Exception {
         helpExecute("select e1, e2, e3 from model.G1 where e2 IN ('foo', 'bar') order by e3",
                 "SELECT g1_0.e1, g1_0.e2, g1_0.e3 FROM pm1.G1 g1_0 WHERE g1_0.e2 IN ('foo', 'bar') ORDER BY g1_0.e3");
+    }
+
+    @Test(expected=TranslatorException.class)
+    public void testOrderByOnNested() throws Exception {
+        helpExecute("select e1, e2 from model.G4 order by e1",
+                "FROM pm1.G2 g2_1 ORDER BY g2_1.g4.e1");
     }
 
     @Test

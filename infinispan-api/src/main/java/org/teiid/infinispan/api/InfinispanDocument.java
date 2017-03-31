@@ -30,7 +30,7 @@ import org.teiid.translator.document.Document;
 
 public class InfinispanDocument extends Document {
     private TreeMap<Integer, TableWireFormat> wireMap;
-    private boolean matched;
+    private boolean matched = true;
     private Map<String, Stats> statsMap = new HashMap<>();
 
     static class Stats {
