@@ -51,7 +51,7 @@ public class IckleConvertionVisitor extends SQLStringVisitor {
     private Integer rowOffset;
     private boolean includePK;
     protected boolean avoidProjection = false;
-    private InfinispanDocumentNode rootNode;
+    private DocumentNode rootNode;
     private DocumentNode joinedNode;
     private List<String> projectedDocumentAttributes = new ArrayList<>();
     private AtomicInteger aliasCounter = new AtomicInteger();
@@ -98,7 +98,7 @@ public class IckleConvertionVisitor extends SQLStringVisitor {
                 aliasName = obj.getCorrelationName();
                 messageName = getMessageName(obj.getMetadataObject());
                 this.parentTable = obj;
-                this.rootNode = new InfinispanDocumentNode(obj.getMetadataObject(), true);
+                this.rootNode = new DocumentNode(obj.getMetadataObject(), true);
                 this.joinedNode = this.rootNode;
 
                 // check to see if there is one-2-one rows
@@ -112,7 +112,7 @@ public class IckleConvertionVisitor extends SQLStringVisitor {
                           Table t = new Table();
                           t.setName(childMessageName);
                           this.joinedNode = this.rootNode.joinWith(JoinType.INNER_JOIN,
-                                    new InfinispanDocumentNode(t, false));
+                                    new DocumentNode(t, false));
                         }
                     }
                 }
@@ -123,9 +123,9 @@ public class IckleConvertionVisitor extends SQLStringVisitor {
                     messageName = getMessageName(mergedTable);
                     aliasName = mergedTable.getName().toLowerCase()+"_"+aliasCounter.getAndIncrement();
                     this.parentTable = new NamedTable(mergedTable.getName(), aliasName, mergedTable);
-                    this.rootNode = new InfinispanDocumentNode(mergedTable, true);
+                    this.rootNode = new DocumentNode(mergedTable, true);
                     this.joinedNode = this.rootNode.joinWith(JoinType.INNER_JOIN,
-                            new InfinispanDocumentNode(obj.getMetadataObject(), true));
+                            new DocumentNode(obj.getMetadataObject(), true));
                     this.nested = true;
                 } catch (TranslatorException e) {
                     this.exceptions.add(e);
@@ -177,20 +177,20 @@ public class IckleConvertionVisitor extends SQLStringVisitor {
             cond = obj.getCondition();
             append(obj.getLeftItem());
             Table right = ((NamedTable)obj.getRightItem()).getMetadataObject();
-            this.joinedNode.joinWith(obj.getJoinType(), new InfinispanDocumentNode(right, true));
+            this.joinedNode.joinWith(obj.getJoinType(), new DocumentNode(right, true));
         }
         else if (obj.getRightItem() instanceof Join) {
             cond = obj.getCondition();
             append(obj.getRightItem());
             Table left = ((NamedTable)obj.getLeftItem()).getMetadataObject();
-            this.joinedNode.joinWith(obj.getJoinType(), new InfinispanDocumentNode(left, true));
+            this.joinedNode.joinWith(obj.getJoinType(), new DocumentNode(left, true));
         }
         else {
             cond = obj.getCondition();
             append(obj.getLeftItem());
             this.queriedTable = (NamedTable)obj.getRightItem();
             Table right = ((NamedTable)obj.getRightItem()).getMetadataObject();
-            this.joinedNode.joinWith(obj.getJoinType(), new InfinispanDocumentNode(right, true));
+            this.joinedNode.joinWith(obj.getJoinType(), new DocumentNode(right, true));
         }
 
         if (cond != null) {
@@ -402,7 +402,7 @@ public class IckleConvertionVisitor extends SQLStringVisitor {
         return metadata;
     }
 
-    InfinispanDocumentNode getDocumentNode() {
+    DocumentNode getDocumentNode() {
         return this.rootNode;
     }
 }

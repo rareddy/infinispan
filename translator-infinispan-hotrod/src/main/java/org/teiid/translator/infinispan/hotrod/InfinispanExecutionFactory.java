@@ -23,14 +23,11 @@
 package org.teiid.translator.infinispan.hotrod;
 
 import java.util.ArrayList;
-import java.util.List;
-
 import javax.resource.cci.ConnectionFactory;
 
 import org.teiid.core.util.PropertiesUtils;
 import org.teiid.infinispan.api.InfinispanConnection;
 import org.teiid.infinispan.api.ProtobufResource;
-import org.teiid.language.Argument;
 import org.teiid.language.Command;
 import org.teiid.language.QueryExpression;
 import org.teiid.metadata.MetadataFactory;
@@ -40,7 +37,6 @@ import org.teiid.metadata.Table;
 import org.teiid.translator.ExecutionContext;
 import org.teiid.translator.ExecutionFactory;
 import org.teiid.translator.MetadataProcessor;
-import org.teiid.translator.ProcedureExecution;
 import org.teiid.translator.ResultSetExecution;
 import org.teiid.translator.Translator;
 import org.teiid.translator.TranslatorException;
@@ -87,13 +83,6 @@ public class InfinispanExecutionFactory extends ExecutionFactory<ConnectionFacto
             InfinispanConnection connection) throws TranslatorException {
         return new InfinispanUpdateExecution(command, executionContext, metadata,
                 connection);
-    }
-
-    @Override
-    public ProcedureExecution createDirectExecution(List<Argument> arguments, Command command,
-            ExecutionContext executionContext, RuntimeMetadata metadata, InfinispanConnection connection)
-            throws TranslatorException {
-        return new InfinispanDirectExecution(arguments, command, executionContext, metadata, connection);
     }
 
     @Override
