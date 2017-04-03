@@ -22,6 +22,6 @@ CREATE FOREIGN TABLE G2 (
 CREATE FOREIGN TABLE G4 (
 	e1 integer NOT NULL OPTIONS (SEARCHABLE 'Searchable', NATIVE_TYPE 'int32', "teiid_odata:TAG" '1'),
 	e2 string NOT NULL OPTIONS (SEARCHABLE 'Searchable', NATIVE_TYPE 'string', "teiid_odata:TAG" '2'),
-	G2_e1 integer OPTIONS (NAMEINSOURCE 'e1', SELECTABLE FALSE, SEARCHABLE 'Searchable', "teiid_odata:PSEUDO" 'g4'),
+	G2_e1 integer OPTIONS (NAMEINSOURCE 'e1', SEARCHABLE 'Searchable', "teiid_odata:PSEUDO" 'g4'),
 	CONSTRAINT FK_G2 FOREIGN KEY(G2_e1) REFERENCES G2 (e1)
 ) OPTIONS (ANNOTATION '@Indexed', NAMEINSOURCE 'pm1.G4', UPDATABLE TRUE, "teiid_odata:MERGE" 'model.G2', "teiid_odata:PARENT_COLUMN_NAME" 'g4', "teiid_odata:PARENT_TAG" '6');

@@ -74,6 +74,11 @@ public class InfinispanUpdateVisitor extends IckleConvertionVisitor {
         visitNode(obj.getTable());
 
         Column pkColumn = getPrimaryKey();
+        if (pkColumn == null) {
+            this.exceptions.add(new TranslatorException(
+                    InfinispanPlugin.Util.gs(InfinispanPlugin.Event.TEIID25013, getParentTable().getName())));
+            return;
+        }
 
         // table that insert issued for
         Table table = obj.getTable().getMetadataObject();
@@ -94,7 +99,7 @@ public class InfinispanUpdateVisitor extends IckleConvertionVisitor {
 
                 updateDocument(targetDocument, column, value);
 
-                if ((pkColumn != null && column.equals(pkColumn) || pkColumn.equals(normalizePseudoColumn(column)))) {
+                if (column.equals(pkColumn) || pkColumn.equals(normalizePseudoColumn(column))) {
                     this.identity = value;
                 }
             }

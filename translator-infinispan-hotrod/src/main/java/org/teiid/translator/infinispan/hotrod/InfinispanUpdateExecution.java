@@ -22,7 +22,6 @@
 package org.teiid.translator.infinispan.hotrod;
 
 import java.util.List;
-import java.util.Map;
 import java.util.Map.Entry;
 
 import org.infinispan.client.hotrod.RemoteCache;
@@ -39,6 +38,7 @@ import org.teiid.language.NamedTable;
 import org.teiid.language.SQLConstants.Tokens;
 import org.teiid.language.visitor.SQLStringVisitor;
 import org.teiid.metadata.AbstractMetadataRecord;
+import org.teiid.metadata.Column;
 import org.teiid.metadata.RuntimeMetadata;
 import org.teiid.metadata.Table;
 import org.teiid.translator.DataNotAvailableException;
@@ -76,8 +76,12 @@ public class InfinispanUpdateExecution implements UpdateExecution {
 
         try {
             Table table = visitor.getParentTable();
-            final String PK = MarshallerBuilder.getDocumentAttributeName(table.getPrimaryKey().getColumns().get(0),
-                    false, this.metadata);
+            Column pkColumn = visitor.getPrimaryKey();
+            if (pkColumn == null) {
+                throw new TranslatorException(InfinispanPlugin.Util.gs(InfinispanPlugin.Event.TEIID25013, table.getName()));
+            }
+
+            final String PK = MarshallerBuilder.getDocumentAttributeName(pkColumn, false, this.metadata);
 
             DocumentFilter docFilter = null;
             if (visitor.isNestedOperation() && visitor.getWhereClause() != null) {
@@ -224,14 +228,6 @@ public class InfinispanUpdateExecution implements UpdateExecution {
             query.startOffset(offset);
             values = query.list();
         }
-    }
-
-    private InfinispanDocument mergeUpdatePayload(InfinispanDocument previous,
-            Map<String, Object> updates) {
-        for (Entry<String, Object> entry:updates.entrySet()) {
-            previous.addProperty(entry.getKey(), entry.getValue());
-        }
-        return previous;
     }
 
     private int mergeUpdatePayload(InfinispanDocument previous,

@@ -28,6 +28,7 @@ import javax.resource.ResourceException;
 
 import org.junit.AfterClass;
 import org.junit.BeforeClass;
+import org.junit.Ignore;
 import org.junit.Test;
 import org.mockito.Mockito;
 import org.teiid.cdk.api.TranslationUtility;
@@ -46,6 +47,7 @@ import org.teiid.translator.ExecutionContext;
 import org.teiid.translator.ResultSetExecution;
 import org.teiid.translator.UpdateExecution;
 
+@Ignore
 public class TestHotrodExecution {
     private static HotRodTestServer server;
     private static RuntimeMetadata metadata;
