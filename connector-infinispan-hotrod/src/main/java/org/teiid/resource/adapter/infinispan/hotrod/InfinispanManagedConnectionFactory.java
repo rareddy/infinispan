@@ -21,18 +21,22 @@
  */
 package org.teiid.resource.adapter.infinispan.hotrod;
 
+import java.util.HashSet;
+
 import javax.resource.ResourceException;
 
+import org.infinispan.client.hotrod.RemoteCache;
 import org.infinispan.client.hotrod.RemoteCacheManager;
 import org.infinispan.client.hotrod.configuration.ConfigurationBuilder;
-import org.infinispan.protostream.ProtobufUtil;
+import org.infinispan.client.hotrod.marshall.ProtoStreamMarshaller;
+import org.infinispan.protostream.FileDescriptorSource;
 import org.infinispan.protostream.SerializationContext;
-import org.infinispan.protostream.config.Configuration;
+import org.infinispan.query.remote.client.ProtobufMetadataManagerConstants;
 import org.teiid.core.BundleUtil;
-import org.teiid.infinispan.api.TeiidMarsheller;
-import org.teiid.infinispan.api.TeiidSerializationContext;
+import org.teiid.infinispan.api.ProtobufResource;
 import org.teiid.resource.spi.BasicConnectionFactory;
 import org.teiid.resource.spi.BasicManagedConnectionFactory;
+import org.teiid.translator.TranslatorException;
 
 
 public class InfinispanManagedConnectionFactory extends BasicManagedConnectionFactory {
@@ -67,15 +71,14 @@ public class InfinispanManagedConnectionFactory extends BasicManagedConnectionFa
     class InfinispanConnectionFactory extends BasicConnectionFactory<InfinispanConnectionImpl> {
         private static final long serialVersionUID = 1064143496037686580L;
         private RemoteCacheManager cacheManager;
+        private HashSet<String> registeredProtoFiles = new HashSet<>();
+        private SerializationContext ctx;
 
         public InfinispanConnectionFactory() throws ResourceException {
             try {
-                SerializationContext baseCtx = ProtobufUtil.newSerializationContext(Configuration.builder().build());
-                TeiidSerializationContext ctx = new TeiidSerializationContext(baseCtx);
-                TeiidMarsheller marsheller = new TeiidMarsheller(ctx);
                 ConfigurationBuilder builder = new ConfigurationBuilder();
                 builder.addServers(remoteServerList);
-                builder.marshaller(marsheller);
+                builder.marshaller(new ProtoStreamMarshaller());
 
                 // note this object is expensive, so there needs to only one
                 // instance for the JVM, in this case one per RA instance.
@@ -88,14 +91,38 @@ public class InfinispanManagedConnectionFactory extends BasicManagedConnectionFa
                 ctx.registerProtoFiles(fds);
                 */
                 this.cacheManager.start();
+                this.ctx = ProtoStreamMarshaller.getSerializationContext(this.cacheManager);
             } catch (Throwable e) {
                 throw new ResourceException(e);
             }
         }
 
+        public void registerProtobufFile(ProtobufResource protobuf) throws TranslatorException {
+            try {
+                if (protobuf != null && !this.registeredProtoFiles.contains(protobuf.getIdentifier())) {
+                    // client side
+                    this.ctx.registerProtoFiles(FileDescriptorSource.fromString(protobuf.getIdentifier(), protobuf.getContents()));
+
+                    // server side
+                    RemoteCache<String, String> metadataCache = this.cacheManager
+                            .getCache(ProtobufMetadataManagerConstants.PROTOBUF_METADATA_CACHE_NAME);
+                    if (metadataCache != null && metadataCache.get(protobuf.getIdentifier()) == null) {
+                        metadataCache.put(protobuf.getIdentifier(), protobuf.getContents());
+                        String errors = metadataCache.get(ProtobufMetadataManagerConstants.ERRORS_KEY_SUFFIX);
+                        if (errors != null) {
+                           throw new TranslatorException(InfinispanManagedConnectionFactory.UTIL.getString("proto_error", errors));
+                        }
+                        this.registeredProtoFiles.add(protobuf.getIdentifier());
+                    }
+                }
+            } catch(Throwable t) {
+                throw new TranslatorException(t);
+            }
+        }
+
         @Override
         public InfinispanConnectionImpl getConnection() throws ResourceException {
-            return new InfinispanConnectionImpl(this.cacheManager, cacheName);
+            return new InfinispanConnectionImpl(this.cacheManager, cacheName,this.ctx, this);
         }
     }
 

@@ -23,32 +23,40 @@
 package org.teiid.resource.adapter.infinispan.hotrod;
 
 
-import java.util.HashMap;
-
 import javax.resource.ResourceException;
 
-import org.infinispan.client.hotrod.RemoteCache;
 import org.infinispan.client.hotrod.RemoteCacheManager;
 import org.infinispan.commons.api.BasicCache;
 import org.infinispan.commons.api.BasicCacheContainer;
-import org.infinispan.query.remote.client.ProtobufMetadataManagerConstants;
+import org.infinispan.protostream.BaseMarshaller;
+import org.infinispan.protostream.SerializationContext;
+import org.infinispan.protostream.SerializationContext.MarshallerProvider;
 import org.teiid.infinispan.api.InfinispanConnection;
+import org.teiid.infinispan.api.InfinispanDocument;
 import org.teiid.infinispan.api.ProtobufResource;
+import org.teiid.resource.adapter.infinispan.hotrod.InfinispanManagedConnectionFactory.InfinispanConnectionFactory;
 import org.teiid.resource.spi.BasicConnection;
 import org.teiid.translator.TranslatorException;
 
 
 public class InfinispanConnectionImpl extends BasicConnection implements InfinispanConnection {
-    private RemoteCacheManager manager;
+    private RemoteCacheManager cacheManager;
     private String cacheName;
-    private HashMap<String, Boolean> registered = new HashMap<>();
-    private BasicCache<?, ?> defaultCache;
 
-    public InfinispanConnectionImpl(RemoteCacheManager manager, String cacheName) throws ResourceException {
-        this.manager = manager;
+    private BasicCache<?, ?> defaultCache;
+    private SerializationContext ctx;
+    private ThreadAwareMarshallerProvider marshallerProvider = new ThreadAwareMarshallerProvider();
+    private InfinispanConnectionFactory icf;
+
+    public InfinispanConnectionImpl(RemoteCacheManager manager, String cacheName, SerializationContext ctx,
+            InfinispanConnectionFactory icf) throws ResourceException {
+        this.cacheManager = manager;
         this.cacheName = cacheName;
+        this.ctx = ctx;
+        this.ctx.registerMarshallerProvider(this.marshallerProvider);
+        this.icf = icf;
         try {
-            this.defaultCache = this.manager.getCache(this.cacheName);
+            this.defaultCache = this.cacheManager.getCache(this.cacheName);
         } catch (Throwable t) {
             throw new ResourceException(t);
         }
@@ -56,39 +64,69 @@ public class InfinispanConnectionImpl extends BasicConnection implements Infinis
 
     @Override
     public void registerProtobufFile(ProtobufResource protobuf) throws TranslatorException {
-        try {
-            if (protobuf != null && registered.get(protobuf.getIdentifier()) == null) {
-                RemoteCache<String, String> metadataCache = manager
-                        .getCache(ProtobufMetadataManagerConstants.PROTOBUF_METADATA_CACHE_NAME);
-                if (metadataCache != null && metadataCache.get(protobuf.getIdentifier()) == null) {
-                    metadataCache.put(protobuf.getIdentifier(), protobuf.getContents());
-                    String errors = metadataCache.get(ProtobufMetadataManagerConstants.ERRORS_KEY_SUFFIX);
-                    if (errors != null) {
-                       throw new TranslatorException(InfinispanManagedConnectionFactory.UTIL.getString("proto_error", errors));
-                    }
-                    registered.put(protobuf.getIdentifier(), Boolean.TRUE);
-                } else {
-                    throw new TranslatorException(ProtobufMetadataManagerConstants.PROTOBUF_METADATA_CACHE_NAME+" not found");
-                }
-            }
-        } catch(Throwable t) {
-            throw new TranslatorException(t);
-        }
+        this.icf.registerProtobufFile(protobuf);
     }
 
     @Override
     public BasicCacheContainer getCacheFactory() throws TranslatorException {
-        return this.manager;
+        return this.cacheManager;
     }
 
     @Override
     public void close() throws ResourceException {
         // do not want to close on per cache basis
         // TODO: what needs to be done here?
+        this.ctx.unregisterMarshallerProvider(this.marshallerProvider);
     }
 
     @Override
     public BasicCache getCache() throws TranslatorException {
         return defaultCache;
+    }
+
+    @Override
+    public void registerMarshaller(BaseMarshaller<InfinispanDocument> marshaller) throws TranslatorException {
+        ThreadAwareMarshallerProvider.setMarsheller(marshaller);
+    }
+
+    @Override
+    public void unRegisterMarshaller(BaseMarshaller<InfinispanDocument> marshaller) throws TranslatorException {
+        ThreadAwareMarshallerProvider.setMarsheller(null);
+    }
+
+    /**
+     * The reason for thread aware marshaller is due to fact the serialization context is JVM wide, so if some other
+     * connection is also trying to register a marshaller for same object, they should not conflict.
+     */
+    static class ThreadAwareMarshallerProvider implements MarshallerProvider {
+
+        private static ThreadLocal<BaseMarshaller<?>> context = new ThreadLocal<BaseMarshaller<?>>() {
+            @Override
+            protected BaseMarshaller<?> initialValue() {
+                return null;
+            }
+        };
+
+        public static void setMarsheller(BaseMarshaller<?> marshaller) {
+            context.set(marshaller);
+        }
+
+        @Override
+        public BaseMarshaller<?> getMarshaller(String typeName) {
+            BaseMarshaller<?> m = context.get();
+            if (m != null && typeName.equals(m.getTypeName())) {
+                return context.get();
+            }
+            return null;
+        }
+
+        @Override
+        public BaseMarshaller<?> getMarshaller(Class<?> javaClass) {
+            BaseMarshaller<?> m = context.get();
+            if (m != null && javaClass.isAssignableFrom(InfinispanDocument.class)) {
+                return context.get();
+            }
+            return null;
+        }
     }
 }

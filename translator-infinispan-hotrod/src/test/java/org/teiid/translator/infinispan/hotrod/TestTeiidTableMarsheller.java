@@ -50,8 +50,6 @@ import org.teiid.core.util.UnitTestUtil;
 import org.teiid.dqp.internal.datamgr.RuntimeMetadataImpl;
 import org.teiid.infinispan.api.InfinispanDocument;
 import org.teiid.infinispan.api.TableWireFormat;
-import org.teiid.infinispan.api.TeiidMarshallerContext;
-import org.teiid.infinispan.api.TeiidSerializationContext;
 import org.teiid.language.Select;
 import org.teiid.metadata.MetadataFactory;
 import org.teiid.metadata.RuntimeMetadata;
@@ -86,30 +84,32 @@ public class TestTeiidTableMarsheller {
     @Test
     public void testReadSimple() throws Exception {
         IckleConvertionVisitor visitor = helpExecute("select * from G1");
-        TeiidTableMarsheller marshaller = new TeiidTableMarsheller(
+
+        TeiidTableMarsheller g1ReadMarshaller = new TeiidTableMarsheller(
                 ProtobufMetadataProcessor.getMessageName(visitor.getParentTable()),
                 MarshallerBuilder.getWireMap(visitor.getParentTable(), visitor.getMetadata()));
-        TeiidMarshallerContext.setMarsheller(marshaller);
 
-        SerializationContext baseCtx = ProtobufUtil.newSerializationContext(Configuration.builder().build());
-        TeiidSerializationContext ctx = new TeiidSerializationContext(baseCtx);
-        ctx.registerProtoFiles(FileDescriptorSource.fromString("tables.proto",
-                ObjectConverterUtil.convertFileToString(UnitTestUtil.getTestDataFile("tables.proto"))));
-        ctx.registerMarshaller(new G1Marshaller() {
+        G1Marshaller g1WriteMarshller = new G1Marshaller() {
             @Override
             public G1 readFrom(ProtoStreamReader reader) throws IOException {
                 throw new RuntimeException("Use Teiid marshaller for reading for this test..");
             }
-        }); // this is for writing.
+        };
+
+        SerializationContext ctx = ProtobufUtil.newSerializationContext(Configuration.builder().build());
+        ctx.registerProtoFiles(FileDescriptorSource.fromString("tables.proto",
+                ObjectConverterUtil.convertFileToString(UnitTestUtil.getTestDataFile("tables.proto"))));
 
         G1 g1 = buildG1();
-
+        ctx.registerMarshaller(g1WriteMarshller);
         ByteArrayOutputStream baos = new ByteArrayOutputStream();
         RawProtoStreamWriter out = RawProtoStreamWriterImpl.newInstance(baos);
         WrappedMessage.writeMessage(ctx, out, g1);
         out.flush();
         baos.flush();
+        ctx.unregisterMarshaller(g1WriteMarshller);
 
+        ctx.registerMarshaller(g1ReadMarshaller);
         RawProtoStreamReader in = RawProtoStreamReaderImpl.newInstance(baos.toByteArray());
         Document result = WrappedMessage.readMessage(ctx, in);
         Map<String, Object> row = result.flatten().get(0);
@@ -120,29 +120,28 @@ public class TestTeiidTableMarsheller {
         assertNull(row.get("e4"));
         List<String> e5 = (List<String>)row.get("e5");
         assertArrayEquals(new String[] {"hello", "world"}, e5.toArray(new String[e5.size()]));
-        TeiidMarshallerContext.setMarsheller(null);
+        ctx.unregisterMarshaller(g1ReadMarshaller);
     }
-
 
     @Test
     public void testWriteSimple() throws Exception {
         IckleConvertionVisitor visitor = helpExecute("select * from G1");
-        TeiidTableMarsheller marshaller = new TeiidTableMarsheller(
+
+        TeiidTableMarsheller g1WriteMarshaller = new TeiidTableMarsheller(
                 ProtobufMetadataProcessor.getMessageName(visitor.getParentTable()),
                 MarshallerBuilder.getWireMap(visitor.getParentTable(), visitor.getMetadata()));
-        TeiidMarshallerContext.setMarsheller(marshaller);
 
-        SerializationContext baseCtx = ProtobufUtil.newSerializationContext(Configuration.builder().build());
-        TeiidSerializationContext ctx = new TeiidSerializationContext(baseCtx);
-        ctx.registerProtoFiles(FileDescriptorSource.fromString("tables.proto",
-                ObjectConverterUtil.convertFileToString(UnitTestUtil.getTestDataFile("tables.proto"))));
-        // this is used for reading, if writing is being attempted then fail
-        ctx.registerMarshaller(new G1Marshaller() {
+        G1Marshaller g1ReadMarshaller = new G1Marshaller() {
             @Override
             public void writeTo(ProtoStreamWriter writer, G1 g1) throws IOException {
                 throw new RuntimeException("Use Teiid marshaller for writing for this test..");
             }
-        });
+        };
+
+        SerializationContext ctx = ProtobufUtil.newSerializationContext(Configuration.builder().build());
+        ctx.registerProtoFiles(FileDescriptorSource.fromString("tables.proto",
+                ObjectConverterUtil.convertFileToString(UnitTestUtil.getTestDataFile("tables.proto"))));
+
 
         InfinispanDocument g1 = new InfinispanDocument("pm1.G1",
                 MarshallerBuilder.getWireMap(visitor.getParentTable(), visitor.getMetadata()), null);
@@ -153,20 +152,22 @@ public class TestTeiidTableMarsheller {
         g1.addArrayProperty("e5", "hello");
         g1.addArrayProperty("e5", "world");
 
+        // write to buffer
+        ctx.registerMarshaller(g1WriteMarshaller);
         ByteArrayOutputStream baos = new ByteArrayOutputStream();
         RawProtoStreamWriter out = RawProtoStreamWriterImpl.newInstance(baos);
         WrappedMessage.writeMessage(ctx, out, g1);
         out.flush();
         baos.flush();
+        ctx.unregisterMarshaller(g1WriteMarshaller);
 
-        TeiidMarshallerContext.setMarsheller(null);
-
+        // read from buffer
+        ctx.registerMarshaller(g1ReadMarshaller);
         RawProtoStreamReader in = RawProtoStreamReaderImpl.newInstance(baos.toByteArray());
         G1 result = WrappedMessage.readMessage(ctx, in);
+        ctx.unregisterMarshaller(g1ReadMarshaller);
 
         assertEquals(buildG1(), result);
-
-        TeiidMarshallerContext.setMarsheller(null);
     }
 
     private G1 buildG1() {
@@ -182,8 +183,7 @@ public class TestTeiidTableMarsheller {
     // this is for sanity debugging while writing the protocol decoder.
     @Test
     public void testMarshallWithComplexNative() throws Exception {
-        SerializationContext baseCtx = ProtobufUtil.newSerializationContext(Configuration.builder().build());
-        TeiidSerializationContext ctx = new TeiidSerializationContext(baseCtx);
+        SerializationContext ctx = ProtobufUtil.newSerializationContext(Configuration.builder().build());
         ctx.registerProtoFiles(FileDescriptorSource.fromString("tables.proto",
                 ObjectConverterUtil.convertFileToString(UnitTestUtil.getTestDataFile("tables.proto"))));
         ctx.registerMarshaller(new G3Marshaller());
@@ -292,38 +292,42 @@ public class TestTeiidTableMarsheller {
     @Test
     public void testReadComplex() throws Exception {
         IckleConvertionVisitor visitor = helpExecute("select * from G2");
-        TeiidTableMarsheller marshaller = new TeiidTableMarsheller(
+
+        TeiidTableMarsheller readMarshaller = new TeiidTableMarsheller(
                 ProtobufMetadataProcessor.getMessageName(visitor.getParentTable()),
                 MarshallerBuilder.getWireMap(visitor.getParentTable(), visitor.getMetadata()));
-        TeiidMarshallerContext.setMarsheller(marshaller);
 
-        SerializationContext baseCtx = ProtobufUtil.newSerializationContext(Configuration.builder().build());
-        TeiidSerializationContext ctx = new TeiidSerializationContext(baseCtx);
+        SerializationContext ctx = ProtobufUtil.newSerializationContext(Configuration.builder().build());
         ctx.registerProtoFiles(FileDescriptorSource.fromString("tables.proto",
                 ObjectConverterUtil.convertFileToString(UnitTestUtil.getTestDataFile("tables.proto"))));
+
         ctx.registerMarshaller(new G3Marshaller());
         ctx.registerMarshaller(new G4Marshaller());
-        // this is used for writing, if reading is being attempted then fail
-        ctx.registerMarshaller(new G2Marshaller() {
+
+        G2Marshaller writeMarshaller = new G2Marshaller() {
             @Override
             public G2 readFrom(ProtoStreamReader reader) throws IOException {
                 throw new RuntimeException("Use Teiid marshaller for reading for this test..");
             }
-        });
+        };
 
         G2 g2 = buildG2();
 
+        // this is used for writing, if reading is being attempted then fail
+        ctx.registerMarshaller(writeMarshaller);
         ByteArrayOutputStream baos = new ByteArrayOutputStream();
         RawProtoStreamWriter out = RawProtoStreamWriterImpl.newInstance(baos);
         WrappedMessage.writeMessage(ctx, out, g2);
         out.flush();
         baos.flush();
+        ctx.unregisterMarshaller(writeMarshaller);
 
+        ctx.registerMarshaller(readMarshaller);
         RawProtoStreamReader in = RawProtoStreamReaderImpl.newInstance(baos.toByteArray());
         InfinispanDocument result = WrappedMessage.readMessage(ctx, in);
-        System.out.println(result.flatten());
+        //System.out.println(result.flatten());
         assertG2(result);
-        TeiidMarshallerContext.setMarsheller(null);
+        ctx.unregisterMarshaller(readMarshaller);
     }
 
 
@@ -331,40 +335,39 @@ public class TestTeiidTableMarsheller {
     @Test
     public void testWriteComplex() throws Exception {
         IckleConvertionVisitor visitor = helpExecute("select * from G2");
-        TeiidTableMarsheller marshaller = new TeiidTableMarsheller(
+
+        TeiidTableMarsheller writeMarshaller = new TeiidTableMarsheller(
                 ProtobufMetadataProcessor.getMessageName(visitor.getParentTable()),
                 MarshallerBuilder.getWireMap(visitor.getParentTable(), visitor.getMetadata()));
-        TeiidMarshallerContext.setMarsheller(marshaller);
 
-        SerializationContext baseCtx = ProtobufUtil.newSerializationContext(Configuration.builder().build());
-        TeiidSerializationContext ctx = new TeiidSerializationContext(baseCtx);
+        SerializationContext ctx = ProtobufUtil.newSerializationContext(Configuration.builder().build());
         ctx.registerProtoFiles(FileDescriptorSource.fromString("tables.proto",
                 ObjectConverterUtil.convertFileToString(UnitTestUtil.getTestDataFile("tables.proto"))));
         ctx.registerMarshaller(new G3Marshaller());
         ctx.registerMarshaller(new G4Marshaller());
-        // this is used for writing, if reading is being attempted then fail
-        ctx.registerMarshaller(new G2Marshaller() {
+
+        G2Marshaller readMarshaller = new G2Marshaller() {
             @Override
             public void writeTo(ProtoStreamWriter writer, G2 g2) throws IOException {
                 throw new RuntimeException("Use Teiid marshaller for writing for this test..");
             }
-        });
-
+        };
 
         InfinispanDocument g2 = buildG2(visitor);
 
+        ctx.registerMarshaller(writeMarshaller);
         ByteArrayOutputStream baos = new ByteArrayOutputStream();
         RawProtoStreamWriter out = RawProtoStreamWriterImpl.newInstance(baos);
         WrappedMessage.writeMessage(ctx, out, g2);
         out.flush();
         baos.flush();
+        ctx.unregisterMarshaller(writeMarshaller);
 
-        TeiidMarshallerContext.setMarsheller(null);
-
+        // this is used for writing, if reading is being attempted then fail
+        ctx.registerMarshaller(readMarshaller);
         RawProtoStreamReader in = RawProtoStreamReaderImpl.newInstance(baos.toByteArray());
         G2 result = WrappedMessage.readMessage(ctx, in);
-
+        ctx.unregisterMarshaller(readMarshaller);
         assertEquals(buildG2(), result);
-
     }
 }

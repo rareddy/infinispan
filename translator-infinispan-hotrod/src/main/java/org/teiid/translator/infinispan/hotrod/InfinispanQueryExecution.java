@@ -22,11 +22,10 @@
 package org.teiid.translator.infinispan.hotrod;
 
 import java.util.List;
+
 import org.infinispan.client.hotrod.RemoteCache;
 import org.infinispan.client.hotrod.RemoteCacheManager;
 import org.teiid.infinispan.api.InfinispanConnection;
-import org.teiid.infinispan.api.TeiidMarshallerContext;
-import org.teiid.infinispan.api.TeiidMarsheller;
 import org.teiid.language.QueryExpression;
 import org.teiid.language.Select;
 import org.teiid.language.visitor.SQLStringVisitor;
@@ -48,7 +47,7 @@ public class InfinispanQueryExecution implements ResultSetExecution {
     private RuntimeMetadata metadata;
     private ExecutionContext executionContext;
     private InfinispanResponse results;
-    private TeiidMarsheller.Marsheller marshaller;
+    private TeiidTableMarsheller marshaller;
 
     public InfinispanQueryExecution(InfinispanExecutionFactory translator,
             QueryExpression command, ExecutionContext executionContext,
@@ -82,24 +81,24 @@ public class InfinispanQueryExecution implements ResultSetExecution {
             }
 
             this.marshaller = MarshallerBuilder.getMarshaller(table, this.metadata, docFilter);
-            TeiidMarshallerContext.setMarsheller(this.marshaller);
+            this.connection.registerMarshaller(this.marshaller);
 
             // if the message in defined in different cache than the default, switch it out now.
             RemoteCache<Object, Object> cache =  getCache(table, connection);
             results = new InfinispanResponse(cache, queryStr, this.executionContext.getBatchSize(), visitor.getRowLimit(),
                     visitor.getRowOffset(), visitor.getProjectedDocumentAttributes(), visitor.getDocumentNode());
         } finally {
-            TeiidMarshallerContext.setMarsheller(null);
+            this.connection.unRegisterMarshaller(this.marshaller);
         }
     }
 
     @Override
     public List<?> next() throws TranslatorException, DataNotAvailableException {
         try {
-            TeiidMarshallerContext.setMarsheller(this.marshaller);
+            this.connection.registerMarshaller(this.marshaller);
             return results.getNextRow();
         } finally {
-            TeiidMarshallerContext.setMarsheller(null);
+            this.connection.unRegisterMarshaller(this.marshaller);
         }
     }
 

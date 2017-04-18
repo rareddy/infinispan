@@ -3,17 +3,17 @@
  * See the COPYRIGHT.txt file distributed with this work for information
  * regarding copyright ownership.  Some portions may be licensed
  * to Red Hat, Inc. under one or more contributor license agreements.
- * 
+ *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
- * 
+ *
  * This library is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
- * 
+ *
  * You should have received a copy of the GNU Lesser General Public
  * License along with this library; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
@@ -25,7 +25,7 @@ public class ProtobufResource {
     // Identifier needs to be unique across the cluster for given schema
     private String identifier;
     private String contents;
-    
+
     public ProtobufResource(String id, String contents) {
         this.identifier = id;
         this.contents = contents;
@@ -43,10 +43,7 @@ public class ProtobufResource {
     public int hashCode() {
         final int prime = 31;
         int result = 1;
-        result = prime * result
-                + ((contents == null) ? 0 : contents.hashCode());
-        result = prime * result
-                + ((identifier == null) ? 0 : identifier.hashCode());
+        result = prime * result + ((identifier == null) ? 0 : identifier.hashCode());
         return result;
     }
 
@@ -59,11 +56,6 @@ public class ProtobufResource {
         if (getClass() != obj.getClass())
             return false;
         ProtobufResource other = (ProtobufResource) obj;
-        if (contents == null) {
-            if (other.contents != null)
-                return false;
-        } else if (!contents.equals(other.contents))
-            return false;
         if (identifier == null) {
             if (other.identifier != null)
                 return false;
@@ -71,4 +63,6 @@ public class ProtobufResource {
             return false;
         return true;
     }
+
+
 }

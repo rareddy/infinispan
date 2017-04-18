@@ -27,26 +27,21 @@ import java.util.List;
 import java.util.Map.Entry;
 import java.util.TreeMap;
 
-import org.infinispan.protostream.BaseMarshaller;
-import org.infinispan.protostream.MessageMarshaller.ProtoStreamReader;
-import org.infinispan.protostream.MessageMarshaller.ProtoStreamWriter;
+import org.infinispan.protostream.ImmutableSerializationContext;
 import org.infinispan.protostream.RawProtoStreamReader;
 import org.infinispan.protostream.RawProtoStreamWriter;
-import org.infinispan.protostream.descriptors.FieldDescriptor;
-import org.infinispan.protostream.impl.BaseMarshallerDelegate;
+import org.infinispan.protostream.RawProtobufMarshaller;
 import org.infinispan.protostream.impl.ByteArrayOutputStreamEx;
 import org.infinispan.protostream.impl.RawProtoStreamWriterImpl;
 import org.teiid.infinispan.api.InfinispanDocument;
 import org.teiid.infinispan.api.ProtobufDataManager;
 import org.teiid.infinispan.api.TableWireFormat;
-import org.teiid.infinispan.api.TeiidMarsheller;
 import org.teiid.translator.TranslatorException;
 import org.teiid.translator.document.Document;
 import org.teiid.translator.infinispan.hotrod.DocumentFilter.Action;
 
-public class TeiidTableMarsheller implements TeiidMarsheller.Marsheller {
+public class TeiidTableMarsheller implements RawProtobufMarshaller<InfinispanDocument> {
     private String documentName;
-    private MarshallerDelegate delegate;
     private TreeMap<Integer, TableWireFormat> wireMap = new TreeMap<>();
     private DocumentFilter docFilter;
 
@@ -65,17 +60,9 @@ public class TeiidTableMarsheller implements TeiidMarsheller.Marsheller {
         return this.documentName;
     }
 
-    @Override
-    public BaseMarshallerDelegate<Document> getDelegate() {
-        if (delegate == null) {
-            delegate = new MarshallerDelegate();
-        }
-        return delegate;
-    }
-
     // Read from ISPN Types >> Teiid Types
     @Override
-    public Object read(RawProtoStreamReader in)  throws IOException {
+    public InfinispanDocument readFrom(ImmutableSerializationContext ctx, RawProtoStreamReader in) throws IOException {
         InfinispanDocument row = new InfinispanDocument(this.documentName, this.wireMap, null);
         readDocument(in, row, this.wireMap, this.docFilter);
         return row;
@@ -83,8 +70,8 @@ public class TeiidTableMarsheller implements TeiidMarsheller.Marsheller {
 
     // Write from Teiid Types >> ISPN Types
     @Override
-    public void write(Object obj, RawProtoStreamWriter out) throws IOException {
-        InfinispanDocument document = (InfinispanDocument)obj;
+    public void writeTo(ImmutableSerializationContext ctx, RawProtoStreamWriter out, InfinispanDocument document)
+            throws IOException {
         TreeMap<Integer, TableWireFormat> wireMap = document.getWireMap();
         for (Entry<Integer, TableWireFormat> entry : wireMap.entrySet()) {
             TableWireFormat twf = entry.getValue();
@@ -101,7 +88,7 @@ public class TeiidTableMarsheller implements TeiidMarsheller.Marsheller {
                     for (Document d : children) {
                         ByteArrayOutputStreamEx baos = new ByteArrayOutputStreamEx();
                         RawProtoStreamWriter rpsw = RawProtoStreamWriterImpl.newInstance(baos);
-                        write(d, rpsw);
+                        writeTo(ctx, rpsw, (InfinispanDocument)d);
                         rpsw.flush();
                         baos.flush();
                         // here readtag because this is inner object, even other one uses write tag but calculated
@@ -367,34 +354,8 @@ public class TeiidTableMarsheller implements TeiidMarsheller.Marsheller {
         }
     }
 
-
-
-    class MarshallerDelegate implements BaseMarshallerDelegate<Document> {
-        @Override
-        public BaseMarshaller<Document> getMarshaller() {
-            return new BaseMarshaller<Document>() {
-                @Override
-                public Class getJavaClass() {
-                    return Document.class;
-                }
-
-                @Override
-                public String getTypeName() {
-                    return TeiidTableMarsheller.this.getTypeName();
-                }
-            };
-        }
-
-        @Override
-        public void marshall(FieldDescriptor fieldDescriptor, Document value, ProtoStreamWriter writer,
-                RawProtoStreamWriter out) throws IOException {
-            write(value, out);
-        }
-
-        @Override
-        public Document unmarshall(FieldDescriptor fieldDescriptor, ProtoStreamReader reader,
-                RawProtoStreamReader in) throws IOException {
-            return (Document)read(in);
-        }
+    @Override
+    public Class getJavaClass() {
+        return InfinispanDocument.class;
     }
 }

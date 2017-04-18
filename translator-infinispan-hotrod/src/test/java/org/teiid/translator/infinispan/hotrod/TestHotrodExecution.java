@@ -32,9 +32,12 @@ import org.junit.Ignore;
 import org.junit.Test;
 import org.mockito.Mockito;
 import org.teiid.cdk.api.TranslationUtility;
+import org.teiid.core.util.ObjectConverterUtil;
+import org.teiid.core.util.UnitTestUtil;
 import org.teiid.dqp.internal.datamgr.RuntimeMetadataImpl;
 import org.teiid.infinispan.api.HotRodTestServer;
 import org.teiid.infinispan.api.InfinispanConnection;
+import org.teiid.infinispan.api.ProtobufResource;
 import org.teiid.language.Command;
 import org.teiid.language.QueryExpression;
 import org.teiid.metadata.MetadataFactory;
@@ -93,8 +96,8 @@ public class TestHotrodExecution {
         UpdateExecution update = null;
 
         // only use G2 & G4 as cache only support single id
-        //connection.registerProtobufFile(new ProtobufResource("tables.proto",
-        //ObjectConverterUtil.convertFileToString(UnitTestUtil.getTestDataFile("tables.proto"))));
+        connection.registerProtobufFile(new ProtobufResource("tables.proto",
+        ObjectConverterUtil.convertFileToString(UnitTestUtil.getTestDataFile("tables.proto"))));
 
         // the below also test one-2-one relation.
         command = utility.parseCommand("DELETE FROM G2");

@@ -30,7 +30,6 @@ import org.infinispan.query.dsl.Query;
 import org.infinispan.query.dsl.QueryFactory;
 import org.teiid.infinispan.api.InfinispanConnection;
 import org.teiid.infinispan.api.InfinispanDocument;
-import org.teiid.infinispan.api.TeiidMarshallerContext;
 import org.teiid.language.ColumnReference;
 import org.teiid.language.Command;
 import org.teiid.language.Delete;
@@ -74,6 +73,7 @@ public class InfinispanUpdateExecution implements UpdateExecution {
             throw visitor.exceptions.get(0);
         }
 
+        TeiidTableMarsheller marshaller = null;
         try {
             Table table = visitor.getParentTable();
             Column pkColumn = visitor.getPrimaryKey();
@@ -119,7 +119,8 @@ public class InfinispanUpdateExecution implements UpdateExecution {
                         this.metadata, ssv.toString(), action);
             }
 
-            TeiidMarshallerContext.setMarsheller(MarshallerBuilder.getMarshaller(table, this.metadata, docFilter));
+            marshaller = MarshallerBuilder.getMarshaller(table, this.metadata, docFilter);
+            this.connection.registerMarshaller(marshaller);
 
             // if the message in defined in different cache than the default, switch it out now.
             final RemoteCache<Object,Object> cache = InfinispanQueryExecution.getCache(table, connection);
@@ -199,7 +200,9 @@ public class InfinispanUpdateExecution implements UpdateExecution {
                 this.updateCount++;
             }
         } finally {
-            TeiidMarshallerContext.setMarsheller(null);
+            if (marshaller != null) {
+                this.connection.unRegisterMarshaller(marshaller);
+            }
         }
     }
 
