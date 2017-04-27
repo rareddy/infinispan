@@ -108,7 +108,6 @@ public class ProtobufMetadataProcessor implements MetadataProcessor<InfinispanCo
     private String protoFilePath;
     private ProtobufResource protoResource;
     private String protobufName;
-    private boolean registerProtobuf = true;
 
     @TranslatorProperty(display="Protobuf file path", category=PropertyType.IMPORT,
             description="Protobuf file path to load as the schema of this model")
@@ -128,16 +127,6 @@ public class ProtobufMetadataProcessor implements MetadataProcessor<InfinispanCo
 
     public void setProtobufName(String name) {
         this.protobufName = name;
-    }
-
-    @TranslatorProperty(display="Register Protobuf", category=PropertyType.IMPORT,
-            description="When true (default), protobuf representing schema is registered dynamically with Infinispan")
-    public boolean isRegisterProtobuf() {
-        return this.registerProtobuf;
-    }
-
-    public void setRegisterProtobuf(boolean register) {
-        this.registerProtobuf = register;
     }
 
     @Override
@@ -172,8 +161,8 @@ public class ProtobufMetadataProcessor implements MetadataProcessor<InfinispanCo
                 protoContents = (String)metadataCache.get(key);
                 // read all the schemas
                 toTeiidSchema(protobufFile, protoContents, metadataFactory);
+                this.protoResource = new ProtobufResource(protobufFile, protoContents);
                 added = true;
-                this.registerProtobuf = false; // already registered no need to re-register
                 break;
             }
 

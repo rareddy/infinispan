@@ -109,16 +109,14 @@ public class InfinispanExecutionFactory extends ExecutionFactory<ConnectionFacto
 
         metadataProcessor.process(metadataFactory, conn);
 
-        if (metadataProcessor.isRegisterProtobuf()) {
-            resource = metadataProcessor.getProtobufResource();
-            if(resource == null) {
-                SchemaToProtobufProcessor stpp = new SchemaToProtobufProcessor();
-                resource = stpp.process(metadataFactory, conn);
-            }
-            // register protobuf
-            if (resource != null) {
-                conn.registerProtobufFile(resource);
-            }
+        resource = metadataProcessor.getProtobufResource();
+        if(resource == null) {
+            SchemaToProtobufProcessor stpp = new SchemaToProtobufProcessor();
+            resource = stpp.process(metadataFactory, conn);
+        }
+        // register protobuf
+        if (resource != null) {
+            conn.registerProtobufFile(resource);
         }
     }
 
